@@ -65,6 +65,32 @@ def upload_file():
         ),
         201,
     )
+@app.get("/api/files")
+def list_files():
+    files = []
 
+    for path in sorted(app.config["UPLOAD_DIR"].iterdir()):
+        if not path.is_file():
+            continue
+
+        file_info = path.stat()
+
+        files.append(
+            {
+                "filename": path.name,
+                "size_bytes": file_info.st_size,
+                "modified_at": datetime.fromtimestamp(
+                    file_info.st_mtime,
+                    timezone.utc,
+                ).isoformat(),
+            }
+        )
+
+    return jsonify(
+        {
+            "count": len(files),
+            "files": files,
+        }
+    )
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
