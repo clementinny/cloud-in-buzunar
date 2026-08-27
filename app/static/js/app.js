@@ -70,8 +70,10 @@ function showDisconnectedState() {
 
 
 function showConnectedState(fileCount) {
+    const label = fileCount === 1 ? "fișier" : "fișiere";
+
     connectionStatus.textContent =
-        `Conectat · ${fileCount} fișiere`;
+        `Conectat · ${fileCount} ${label}`;
     loginButton.textContent = "Deconectare";
 }
 
