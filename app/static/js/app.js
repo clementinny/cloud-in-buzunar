@@ -37,6 +37,20 @@ function formatBytes(bytes) {
     if (bytes === 0) {
         return "0 B";
     }
+
+    const units = ["B", "KB", "MB", "GB"];
+
+    const unitIndex = Math.min(
+        Math.floor(Math.log(bytes) / Math.log(1024)),
+        units.length - 1,
+    );
+
+    const value = bytes / (1024 ** unitIndex);
+
+    return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+
 function clearSelectedFile() {
     selectedFile = null;
     fileInput.value = "";
@@ -50,10 +64,12 @@ function selectFile(file) {
 
     if (file.size > maximumUploadSize) {
         clearSelectedFile();
+
         uploadMessage.textContent =
             "Fișierul depășește limita de 100 MB.";
         uploadMessage.classList.add("is-error");
         uploadMessage.hidden = false;
+
         return;
     }
 
@@ -116,16 +132,6 @@ function uploadFile(file, token) {
 
         request.send(formData);
     });
-}
-    const units = ["B", "KB", "MB", "GB"];
-    const unitIndex = Math.min(
-        Math.floor(Math.log(bytes) / Math.log(1024)),
-        units.length - 1,
-    );
-
-    const value = bytes / (1024 ** unitIndex);
-
-    return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
 
 
