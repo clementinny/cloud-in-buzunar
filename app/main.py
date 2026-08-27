@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from functools import wraps
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, render_template
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -62,6 +62,9 @@ def require_api_token(view_function):
 
     return wrapped_view
 
+@app.get("/")
+def dashboard():
+    return render_template("index.html")
 
 
 @app.get("/api/health")
