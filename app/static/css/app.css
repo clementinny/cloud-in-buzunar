@@ -225,3 +225,146 @@ button:disabled {
         transition: none;
     }
 }
+.files-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.files-toolbar h2,
+.files-toolbar p {
+    margin-top: 0;
+}
+
+#file-list {
+    display: grid;
+    gap: 10px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.file-name {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-details {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+dialog {
+    width: min(calc(100% - 32px), 430px);
+    padding: 0;
+    color: var(--text);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 22px;
+    background: #101827;
+    box-shadow: 0 30px 100px rgba(0, 0, 0, 0.65);
+}
+
+dialog::backdrop {
+    background: rgba(2, 6, 23, 0.78);
+    backdrop-filter: blur(8px);
+}
+
+dialog form {
+    display: grid;
+    gap: 16px;
+    padding: 26px;
+}
+
+dialog h2 {
+    margin: 6px 0;
+}
+
+.dialog-label {
+    margin: 0;
+    color: var(--accent-light);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.dialog-description {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+dialog label {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+dialog input {
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 14px;
+    color: var(--text);
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    outline: none;
+    background: rgba(2, 6, 23, 0.6);
+}
+
+dialog input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.secondary-button {
+    color: var(--muted);
+    border-color: var(--border);
+    background: transparent;
+}
+
+.error-message {
+    margin: 0;
+    color: #fca5a5;
+    font-size: 0.9rem;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+@media (max-width: 520px) {
+    .files-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .files-toolbar button {
+        width: 100%;
+    }
+
+    .file-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

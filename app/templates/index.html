@@ -12,6 +12,10 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/app.css') }}"
 >
+<script
+    src="{{ url_for('static', filename='js/app.js') }}"
+    defer
+></script>
 </head>
 
 <body>
@@ -45,12 +49,62 @@
         </section>
 
         <section id="files" aria-labelledby="files-title">
+    <div class="files-toolbar">
+        <div>
             <h2 id="files-title">Fișierele mele</h2>
             <p id="connection-status">Neconectat</p>
-            <button id="login-button" type="button">
-                Conectare
-            </button>
-        </section>
+        </div>
+
+        <button id="login-button" type="button">
+            Conectare
+        </button>
+    </div>
+
+    <p id="files-message">
+        Conectează-te pentru a vedea fișierele.
+    </p>
+
+    <ul id="file-list" aria-live="polite"></ul>
+</section>
     </main>
 </body>
+<dialog id="login-dialog">
+    <form id="login-form">
+        <div>
+            <p class="dialog-label">Acces privat</p>
+            <h2>Conectare la CloudInBuzunar</h2>
+            <p class="dialog-description">
+                Introdu tokenul API păstrat pe server.
+            </p>
+        </div>
+
+        <label for="token-input">Token API</label>
+
+        <input
+            id="token-input"
+            name="token"
+            type="password"
+            autocomplete="off"
+            required
+        >
+
+        <p id="login-error" class="error-message" hidden>
+            Token invalid sau server indisponibil.
+        </p>
+
+        <div class="dialog-actions">
+            <button
+                id="close-login"
+                class="secondary-button"
+                type="button"
+            >
+                Renunță
+            </button>
+
+            <button type="submit">
+                Conectare
+            </button>
+        </div>
+    </form>
+</dialog>
 </html>
