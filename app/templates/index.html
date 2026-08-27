@@ -59,6 +59,51 @@
             Conectare
         </button>
     </div>
+<form id="upload-form" class="upload-panel" hidden>
+    <label id="drop-zone" class="drop-zone" for="file-input">
+        <input id="file-input" type="file" hidden>
+
+        <span class="upload-icon" aria-hidden="true">↑</span>
+        <strong>Alege sau trage un fișier aici</strong>
+        <span>Maximum 100 MB</span>
+    </label>
+
+    <div id="upload-details" class="upload-details" hidden>
+        <div>
+            <strong id="selected-file-name"></strong>
+            <span id="selected-file-size"></span>
+        </div>
+
+        <div class="upload-actions">
+            <button
+                id="clear-file-button"
+                class="secondary-button"
+                type="button"
+            >
+                Renunță
+            </button>
+
+            <button id="upload-button" type="submit">
+                Încarcă
+            </button>
+        </div>
+    </div>
+
+    <div id="upload-progress-wrapper" hidden>
+        <div class="progress-label">
+            <span>Se încarcă...</span>
+            <span id="upload-percent">0%</span>
+        </div>
+
+        <progress
+            id="upload-progress"
+            max="100"
+            value="0"
+        ></progress>
+    </div>
+
+    <p id="upload-message" role="status" hidden></p>
+</form>
 
     <p id="files-message">
         Conectează-te pentru a vedea fișierele.
