@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+    <meta name="theme-color" content="#0f172a">
+    <title>CloudInBuzunar</title>
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/app.css') }}"
+>
+</head>
+
+<body>
+    <header>
+        <p>CloudInBuzunar</p>
+        <h1>Cloudul meu personal</h1>
+        <p>Fișiere, media, backup și AI direct din buzunar.</p>
+    </header>
+
+    <main>
+        <section aria-labelledby="services-title">
+            <h2 id="services-title">Servicii</h2>
+
+            <article>
+                <h3>Fișiere</h3>
+                <p>Încarcă, organizează și descarcă fișierele tale.</p>
+                <a href="#files">Deschide File Manager</a>
+            </article>
+
+            <article>
+                <h3>Media</h3>
+                <p>Fotografii, muzică și filme de pe server.</p>
+                <button type="button" disabled>În curând</button>
+            </article>
+
+            <article>
+                <h3>AI local</h3>
+                <p>Conversații private cu modelul Qwen.</p>
+                <button type="button" disabled>În curând</button>
+            </article>
+        </section>
+
+        <section id="files" aria-labelledby="files-title">
+            <h2 id="files-title">Fișierele mele</h2>
+            <p id="connection-status">Neconectat</p>
+            <button id="login-button" type="button">
+                Conectare
+            </button>
+        </section>
+    </main>
+</body>
+</html>
