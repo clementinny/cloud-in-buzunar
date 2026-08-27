@@ -499,3 +499,28 @@ progress::-moz-progress-bar {
         flex: 1;
     }
 }
+.file-information {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.file-open-button {
+    min-height: 38px;
+    flex-shrink: 0;
+    padding: 8px 13px;
+}
+
+#files-message.is-error {
+    color: #fca5a5;
+}
+
+@media (max-width: 520px) {
+    .file-information {
+        width: 100%;
+    }
+
+    .file-open-button {
+        width: 100%;
+    }
+}

@@ -134,7 +134,46 @@ function uploadFile(file, token) {
     });
 }
 
+async function openFile(filename) {
+    const previewWindow = window.open("about:blank", "_blank");
 
+    if (!previewWindow) {
+        throw new Error(
+            "Browserul a blocat deschiderea unui tab nou.",
+        );
+    }
+
+    try {
+        const encodedFilename = encodeURIComponent(filename);
+
+        const response = await fetch(
+            `/api/files/${encodedFilename}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${apiToken}`,
+                },
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                `Fișierul nu poate fi deschis: HTTP ${response.status}`,
+            );
+        }
+
+        const fileBlob = await response.blob();
+        const fileUrl = URL.createObjectURL(fileBlob);
+
+        previewWindow.location.href = fileUrl;
+
+        setTimeout(() => {
+            URL.revokeObjectURL(fileUrl);
+        }, 60_000);
+    } catch (error) {
+        previewWindow.close();
+        throw error;
+    }
+}
 function renderFiles(files) {
     fileList.replaceChildren();
 
@@ -147,20 +186,43 @@ function renderFiles(files) {
     filesMessage.hidden = true;
 
     for (const file of files) {
-        const item = document.createElement("li");
-        const name = document.createElement("span");
-        const details = document.createElement("span");
+    const item = document.createElement("li");
+    const information = document.createElement("div");
+    const name = document.createElement("span");
+    const details = document.createElement("span");
+    const openButton = document.createElement("button");
 
-        item.className = "file-row";
-        name.className = "file-name";
-        details.className = "file-details";
+    item.className = "file-row";
+    information.className = "file-information";
+    name.className = "file-name";
+    details.className = "file-details";
+    openButton.className = "file-open-button";
 
-        name.textContent = file.filename;
-        details.textContent = formatBytes(file.size_bytes);
+    name.textContent = file.filename;
+    details.textContent = formatBytes(file.size_bytes);
+    openButton.textContent = "Deschide";
+    openButton.type = "button";
 
-        item.append(name, details);
-        fileList.append(item);
-    }
+    openButton.addEventListener("click", async () => {
+        openButton.disabled = true;
+        openButton.textContent = "Se deschide...";
+
+        try {
+            await openFile(file.filename);
+        } catch (error) {
+            filesMessage.textContent = error.message;
+            filesMessage.classList.add("is-error");
+            filesMessage.hidden = false;
+        } finally {
+            openButton.disabled = false;
+            openButton.textContent = "Deschide";
+        }
+    });
+
+    information.append(name, details);
+    item.append(information, openButton);
+    fileList.append(item);
+}
 }
 
 
