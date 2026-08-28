@@ -524,3 +524,29 @@ progress::-moz-progress-bar {
         width: 100%;
     }
 }
+.file-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.delete-button {
+    color: #fecaca;
+    border-color: rgba(248, 113, 113, 0.35);
+    background: rgba(127, 29, 29, 0.22);
+}
+
+.delete-button:hover:not(:disabled) {
+    border-color: rgba(248, 113, 113, 0.65);
+    background: rgba(185, 28, 28, 0.4);
+}
+
+@media (max-width: 520px) {
+    .file-actions {
+        width: 100%;
+    }
+
+    .file-actions button {
+        flex: 1;
+    }
+}

@@ -174,11 +174,34 @@ async function openFile(filename) {
         throw error;
     }
 }
+
+async function deleteFile(filename) {
+    const encodedFilename = encodeURIComponent(filename);
+
+    const response = await fetch(
+        `/api/files/${encodedFilename}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: `Bearer ${apiToken}`,
+            },
+        },
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            `Fișierul nu poate fi șters: HTTP ${response.status}`,
+        );
+    }
+
+    return response.json();
+}
 function renderFiles(files) {
     fileList.replaceChildren();
 
     if (files.length === 0) {
         filesMessage.textContent = "Nu există fișiere încă.";
+        filesMessage.classList.remove("is-error");
         filesMessage.hidden = false;
         return;
     }
@@ -186,46 +209,83 @@ function renderFiles(files) {
     filesMessage.hidden = true;
 
     for (const file of files) {
-    const item = document.createElement("li");
-    const information = document.createElement("div");
-    const name = document.createElement("span");
-    const details = document.createElement("span");
-    const openButton = document.createElement("button");
+        const item = document.createElement("li");
+        const information = document.createElement("div");
+        const actions = document.createElement("div");
+        const name = document.createElement("span");
+        const details = document.createElement("span");
+        const openButton = document.createElement("button");
+        const deleteButton = document.createElement("button");
 
-    item.className = "file-row";
-    information.className = "file-information";
-    name.className = "file-name";
-    details.className = "file-details";
-    openButton.className = "file-open-button";
+        item.className = "file-row";
+        information.className = "file-information";
+        actions.className = "file-actions";
+        name.className = "file-name";
+        details.className = "file-details";
+        openButton.className = "file-open-button";
+        deleteButton.className = "delete-button";
 
-    name.textContent = file.filename;
-    details.textContent = formatBytes(file.size_bytes);
-    openButton.textContent = "Deschide";
-    openButton.type = "button";
+        name.textContent = file.filename;
+        details.textContent = formatBytes(file.size_bytes);
 
-    openButton.addEventListener("click", async () => {
-        openButton.disabled = true;
-        openButton.textContent = "Se deschide...";
+        openButton.textContent = "Deschide";
+        openButton.type = "button";
 
-        try {
-            await openFile(file.filename);
-        } catch (error) {
-            filesMessage.textContent = error.message;
-            filesMessage.classList.add("is-error");
-            filesMessage.hidden = false;
-        } finally {
-            openButton.disabled = false;
-            openButton.textContent = "Deschide";
-        }
-    });
+        deleteButton.textContent = "Șterge";
+        deleteButton.type = "button";
 
-    information.append(name, details);
-    item.append(information, openButton);
-    fileList.append(item);
+        openButton.addEventListener("click", async () => {
+            openButton.disabled = true;
+            openButton.textContent = "Se deschide...";
+
+            try {
+                await openFile(file.filename);
+            } catch (error) {
+                filesMessage.textContent = error.message;
+                filesMessage.classList.add("is-error");
+                filesMessage.hidden = false;
+            } finally {
+                openButton.disabled = false;
+                openButton.textContent = "Deschide";
+            }
+        });
+
+        deleteButton.addEventListener("click", async () => {
+            const confirmed = window.confirm(
+                `Ștergi definitiv fișierul „${file.filename}”?`,
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            deleteButton.disabled = true;
+            deleteButton.textContent = "Se șterge...";
+
+            try {
+                await deleteFile(file.filename);
+                await loadFiles(apiToken);
+
+                filesMessage.textContent =
+                    `${file.filename} a fost șters.`;
+                filesMessage.classList.remove("is-error");
+                filesMessage.hidden = false;
+            } catch (error) {
+                filesMessage.textContent = error.message;
+                filesMessage.classList.add("is-error");
+                filesMessage.hidden = false;
+
+                deleteButton.disabled = false;
+                deleteButton.textContent = "Șterge";
+            }
+        });
+
+        information.append(name, details);
+        actions.append(openButton, deleteButton);
+        item.append(information, actions);
+        fileList.append(item);
+    }
 }
-}
-
-
 function showDisconnectedState() {
     connectionStatus.textContent = "Neconectat";
     loginButton.textContent = "Conectare";

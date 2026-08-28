@@ -146,5 +146,24 @@ def download_file(filename):
         filename,
         as_attachment=True,
     )
+@app.delete("/api/files/<filename>")
+@require_api_token
+def delete_file(filename):
+    safe_name = secure_filename(filename)
+
+    if not safe_name or safe_name != filename:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    target = app.config["UPLOAD_DIR"] / safe_name
+
+    if not target.is_file():
+        return jsonify({"error": "File not found"}), 404
+
+    try:
+        target.unlink()
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 404
+
+    return jsonify({"deleted": safe_name})
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
