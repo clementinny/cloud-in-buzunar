@@ -178,3 +178,30 @@ def set_user_password(username, password):
         connection.commit()
     finally:
         connection.close()
+def set_user_role(username, role):
+    normalized_username = username.strip()
+
+    if role not in {"admin", "user"}:
+        raise ValueError("Role must be admin or user")
+
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET role = ?
+            WHERE username = ? COLLATE NOCASE
+            """,
+            (
+                role,
+                normalized_username,
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            raise ValueError("User not found")
+
+        connection.commit()
+    finally:
+        connection.close()

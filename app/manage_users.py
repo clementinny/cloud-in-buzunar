@@ -6,6 +6,7 @@ from app.database import (
     initialize_database,
     list_users,
     set_user_password,
+    set_user_role,
 )
 
 
@@ -86,6 +87,23 @@ def handle_set_password(arguments):
 
     return 0
 
+def handle_set_role(arguments):
+    try:
+        set_user_role(
+            arguments.username,
+            arguments.role,
+        )
+    except ValueError as error:
+        print(f"Error: {error}")
+        return 1
+
+    print(
+        f"Updated role for {arguments.username!r} "
+        f"to {arguments.role!r}"
+    )
+
+    return 0
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Manage CloudInBuzunar users"
@@ -116,6 +134,18 @@ def build_parser():
     password_parser.add_argument("username")
     password_parser.set_defaults(
         handler=handle_set_password
+    )
+    role_parser = commands.add_parser(
+        "set-role",
+        help="Set the role of a user",
+    )
+    role_parser.add_argument("username")
+    role_parser.add_argument(
+        "role",
+        choices=("admin", "user"),
+    )
+    role_parser.set_defaults(
+        handler=handle_set_role
     )
 
     return parser
