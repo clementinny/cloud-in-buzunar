@@ -205,3 +205,28 @@ def set_user_role(username, role):
         connection.commit()
     finally:
         connection.close()
+def set_user_active(username, is_active):
+    normalized_username = username.strip()
+    active_value = 1 if is_active else 0
+
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET is_active = ?
+            WHERE username = ? COLLATE NOCASE
+            """,
+            (
+                active_value,
+                normalized_username,
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            raise ValueError("User not found")
+
+        connection.commit()
+    finally:
+        connection.close()

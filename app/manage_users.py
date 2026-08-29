@@ -104,6 +104,25 @@ def handle_set_role(arguments):
 
     return 0
 
+def handle_set_active(arguments):
+    try:
+        set_user_active(
+            arguments.username,
+            arguments.active,
+        )
+    except ValueError as error:
+        print(f"Error: {error}")
+        return 1
+
+    status = "active" if arguments.active else "inactive"
+
+    print(
+        f"Updated user {arguments.username!r} "
+        f"to {status!r}"
+    )
+
+    return 0
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Manage CloudInBuzunar users"
@@ -147,7 +166,25 @@ def build_parser():
     role_parser.set_defaults(
         handler=handle_set_role
     )
+    activate_parser = commands.add_parser(
+        "activate",
+        help="Activate a user",
+    )
+    activate_parser.add_argument("username")
+    activate_parser.set_defaults(
+        handler=handle_set_active,
+        active=True,
+    )
 
+    deactivate_parser = commands.add_parser(
+        "deactivate",
+        help="Deactivate a user",
+    )
+    deactivate_parser.add_argument("username")
+    deactivate_parser.set_defaults(
+        handler=handle_set_active,
+        active=False,
+    )
     return parser
 
 
