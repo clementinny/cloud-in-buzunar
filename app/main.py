@@ -1,5 +1,4 @@
 import hashlib
-import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -28,15 +27,9 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-TOKEN_FILE = DATA_DIR / "api-token"
 
-if not TOKEN_FILE.exists():
-    raise RuntimeError(f"Missing API token: {TOKEN_FILE}")
 
-API_TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip()
 
-if not API_TOKEN:
-    raise RuntimeError("API token cannot be empty")
 
 SECRET_KEY_FILE = DATA_DIR / "flask-secret-key"
 
@@ -77,27 +70,50 @@ def calculate_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def require_api_token(view_function):
+def get_session_user():
+    user_id = session.get("user_id")
+
+    if user_id is None:
+        return None
+
+    user = find_user_by_id(user_id)
+
+    if user is None or not user["is_active"]:
+        session.clear()
+        return None
+
+    return user
+
+
+def require_login(view_function):
     @wraps(view_function)
     def wrapped_view(*args, **kwargs):
-        authorization = request.headers.get("Authorization", "")
-        scheme, separator, provided_token = authorization.partition(" ")
+        user = get_session_user()
 
-        token_is_valid = (
-            separator != ""
-            and scheme.lower() == "bearer"
-            and hmac.compare_digest(
-                provided_token.encode("utf-8"),
-                API_TOKEN.encode("utf-8"),
-            )
-        )
+        if user is None:
+            return jsonify(
+                {"error": "Authentication required"}
+            ), 401
 
-        if not token_is_valid:
-            return (
-                jsonify({"error": "Unauthorized"}),
-                401,
-                {"WWW-Authenticate": "Bearer"},
-            )
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def require_admin(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        user = get_session_user()
+
+        if user is None:
+            return jsonify(
+                {"error": "Authentication required"}
+            ), 401
+
+        if user["role"] != "admin":
+            return jsonify(
+                {"error": "Administrator access required"}
+            ), 403
 
         return view_function(*args, **kwargs)
 
@@ -179,7 +195,7 @@ def current_session():
     return jsonify({"user": serialize_user(user)})
 
 @app.post("/api/files")
-@require_api_token
+@require_login
 def upload_file():
     if "file" not in request.files:
         return jsonify({"error": "Missing form field: file"}), 400
@@ -212,7 +228,7 @@ def upload_file():
         201,
     )
 @app.get("/api/files")
-@require_api_token
+@require_login
 def list_files():
     files = []
 
@@ -240,7 +256,7 @@ def list_files():
         }
     )
 @app.get("/api/files/<filename>")
-@require_api_token
+@require_login
 def download_file(filename):
     return send_from_directory(
         app.config["UPLOAD_DIR"],
@@ -248,7 +264,7 @@ def download_file(filename):
         as_attachment=True,
     )
 @app.delete("/api/files/<filename>")
-@require_api_token
+@require_admin
 def delete_file(filename):
     safe_name = secure_filename(filename)
 

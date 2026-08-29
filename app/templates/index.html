@@ -13,7 +13,7 @@
     href="{{ url_for('static', filename='css/app.css') }}"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=7"
+    src="{{ url_for('static', filename='js/app.js') }}?v=8"
     defer
 ></script>
 </head>
@@ -113,28 +113,39 @@
 </section>
     </main>
 </body>
+
 <dialog id="login-dialog">
     <form id="login-form">
         <div>
             <p class="dialog-label">Acces privat</p>
             <h2>Conectare la CloudInBuzunar</h2>
             <p class="dialog-description">
-                Introdu tokenul API păstrat pe server.
+                Introdu utilizatorul și parola contului tău.
             </p>
         </div>
 
-        <label for="token-input">Token API</label>
-
+        <label for="username-input">Utilizator</label>
         <input
-            id="token-input"
-            name="token"
+            id="username-input"
+            name="username"
+            type="text"
+            autocomplete="username"
+            minlength="3"
+            maxlength="32"
+            required
+        >
+
+        <label for="password-input">Parolă</label>
+        <input
+            id="password-input"
+            name="password"
             type="password"
-            autocomplete="off"
+            autocomplete="current-password"
             required
         >
 
         <p id="login-error" class="error-message" hidden>
-            Token invalid sau server indisponibil.
+            Utilizator sau parolă incorectă.
         </p>
 
         <div class="dialog-actions">
@@ -152,4 +163,6 @@
         </div>
     </form>
 </dialog>
+
+
 </html>

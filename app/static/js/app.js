@@ -2,13 +2,15 @@ const loginButton = document.querySelector("#login-button");
 const loginDialog = document.querySelector("#login-dialog");
 const loginForm = document.querySelector("#login-form");
 const closeLoginButton = document.querySelector("#close-login");
-const tokenInput = document.querySelector("#token-input");
+const usernameInput =
+    document.querySelector("#username-input");
+const passwordInput =
+    document.querySelector("#password-input");
 const loginError = document.querySelector("#login-error");
 const connectionStatus = document.querySelector("#connection-status");
 const filesMessage = document.querySelector("#files-message");
 const fileList = document.querySelector("#file-list");
 
-const storageKey = "cloudInBuzunar.apiToken";
 const uploadForm = document.querySelector("#upload-form");
 const dropZone = document.querySelector("#drop-zone");
 const fileInput = document.querySelector("#file-input");
@@ -28,7 +30,7 @@ const uploadPercent =
     document.querySelector("#upload-percent");
 const uploadMessage =
     document.querySelector("#upload-message");
-let apiToken = sessionStorage.getItem(storageKey) ?? "";
+let currentUser = null;
 const maximumUploadSize = 100 * 1024 * 1024;
 
 let selectedFile = null;
@@ -79,8 +81,56 @@ function selectFile(file) {
     uploadDetails.hidden = false;
 }
 
+async function loginUser(username, password) {
+    const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            username,
+            password,
+        }),
+    });
 
-function uploadFile(file, token) {
+    if (!response.ok) {
+        throw new Error("Invalid credentials");
+    }
+
+    const data = await response.json();
+
+    return data.user;
+}
+
+
+async function logoutUser() {
+    const response = await fetch("/api/auth/logout", {
+        method: "POST",
+    });
+
+    if (!response.ok) {
+        throw new Error("Logout failed");
+    }
+}
+
+
+async function restoreSession() {
+    const response = await fetch("/api/auth/me");
+
+    if (response.status === 401) {
+        return null;
+    }
+
+    if (!response.ok) {
+        throw new Error("Session check failed");
+    }
+
+    const data = await response.json();
+
+    return data.user;
+}
+
+function uploadFile(file) {
     return new Promise((resolve, reject) => {
         const formData = new FormData();
         const request = new XMLHttpRequest();
@@ -89,10 +139,7 @@ function uploadFile(file, token) {
 
         request.open("POST", "/api/files");
 
-        request.setRequestHeader(
-            "Authorization",
-            `Bearer ${token}`,
-        );
+
 
         request.upload.addEventListener("progress", (event) => {
             if (!event.lengthComputable) {
@@ -147,13 +194,8 @@ async function openFile(filename) {
         const encodedFilename = encodeURIComponent(filename);
 
         const response = await fetch(
-            `/api/files/${encodedFilename}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${apiToken}`,
-                },
-            },
-        );
+    `/api/files/${encodedFilename}`,
+);
 
         if (!response.ok) {
             throw new Error(
@@ -179,14 +221,11 @@ async function deleteFile(filename) {
     const encodedFilename = encodeURIComponent(filename);
 
     const response = await fetch(
-        `/api/files/${encodedFilename}`,
-        {
-            method: "DELETE",
-            headers: {
-                Authorization: `Bearer ${apiToken}`,
-            },
-        },
-    );
+    `/api/files/${encodedFilename}`,
+    {
+        method: "DELETE",
+    },
+);
 
     if (!response.ok) {
         throw new Error(
@@ -264,7 +303,7 @@ function renderFiles(files) {
 
             try {
                 await deleteFile(file.filename);
-                await loadFiles(apiToken);
+                await loadFiles();
 
                 filesMessage.textContent =
                     `${file.filename} a fost șters.`;
@@ -281,13 +320,18 @@ function renderFiles(files) {
         });
 
         information.append(name, details);
-        actions.append(openButton, deleteButton);
+        actions.append(openButton);
+
+if (currentUser?.role === "admin") {
+    actions.append(deleteButton);
+}
         item.append(information, actions);
         fileList.append(item);
     }
 }
 function showDisconnectedState() {
-    connectionStatus.textContent = "Neconectat";
+currentUser = null;    
+connectionStatus.textContent = "Neconectat";
     loginButton.textContent = "Conectare";
     filesMessage.textContent =
         "Conectează-te pentru a vedea fișierele.";
@@ -297,23 +341,23 @@ function showDisconnectedState() {
     clearSelectedFile();
 }
 
-
 function showConnectedState(fileCount) {
     const label = fileCount === 1 ? "fișier" : "fișiere";
+    const roleLabel =
+        currentUser.role === "admin"
+            ? "administrator"
+            : "utilizator";
 
     connectionStatus.textContent =
-        `Conectat · ${fileCount} ${label}`;
+        `${currentUser.username} · ${roleLabel} · ` +
+        `${fileCount} ${label}`;
+
     loginButton.textContent = "Deconectare";
-uploadForm.hidden = false;
+    uploadForm.hidden = false;
 }
 
-
-async function loadFiles(token) {
-    const response = await fetch("/api/files", {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
+async function loadFiles() {
+    const response = await fetch("/api/files");
 
     if (!response.ok) {
         throw new Error(`API returned ${response.status}`);
@@ -325,18 +369,22 @@ async function loadFiles(token) {
     showConnectedState(data.count);
 }
 
+loginButton.addEventListener("click", async () => {
+    if (currentUser) {
+        try {
+            await logoutUser();
+            showDisconnectedState();
+        } catch (error) {
+            connectionStatus.textContent =
+                "Deconectarea a eșuat.";
+        }
 
-loginButton.addEventListener("click", () => {
-    if (apiToken) {
-        apiToken = "";
-        sessionStorage.removeItem(storageKey);
-        showDisconnectedState();
         return;
     }
 
     loginError.hidden = true;
     loginDialog.showModal();
-    tokenInput.focus();
+    usernameInput.focus();
 });
 
 
@@ -350,19 +398,19 @@ closeLoginButton.addEventListener("click", () => {
 loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const candidateToken = tokenInput.value.trim();
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
 
     loginError.hidden = true;
 
     try {
-        await loadFiles(candidateToken);
-
-        apiToken = candidateToken;
-        sessionStorage.setItem(storageKey, apiToken);
+        currentUser = await loginUser(username, password);
+        await loadFiles();
 
         loginDialog.close();
         loginForm.reset();
     } catch (error) {
+        currentUser = null;
         loginError.hidden = false;
     }
 });
@@ -410,7 +458,7 @@ dropZone.addEventListener("drop", (event) => {
 uploadForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (!selectedFile || !apiToken) {
+    if (!selectedFile || !currentUser) {
         return;
     }
 
@@ -423,14 +471,14 @@ uploadForm.addEventListener("submit", async (event) => {
 
     try {
         const uploadedFile =
-            await uploadFile(selectedFile, apiToken);
+            await uploadFile(selectedFile);
 
         uploadMessage.textContent =
             `${uploadedFile.filename} a fost încărcat.`;
         uploadMessage.hidden = false;
 
         clearSelectedFile();
-        await loadFiles(apiToken);
+        await loadFiles();
     } catch (error) {
         uploadMessage.textContent = error.message;
         uploadMessage.classList.add("is-error");
@@ -440,12 +488,22 @@ uploadForm.addEventListener("submit", async (event) => {
         uploadProgressWrapper.hidden = true;
     }
 });
-if (apiToken) {
-    loadFiles(apiToken).catch(() => {
-        apiToken = "";
-        sessionStorage.removeItem(storageKey);
+
+async function initializeApplication() {
+    try {
+        const user = await restoreSession();
+
+        if (user === null) {
+            showDisconnectedState();
+            return;
+        }
+
+        currentUser = user;
+        await loadFiles();
+    } catch (error) {
         showDisconnectedState();
-    });
-} else {
-    showDisconnectedState();
+    }
 }
+
+
+initializeApplication();
