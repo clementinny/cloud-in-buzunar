@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
@@ -19,7 +19,24 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 )
 """
-
+LOGIN_ATTEMPT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    ip_address TEXT NOT NULL,
+    was_successful INTEGER NOT NULL
+        CHECK (was_successful IN (0, 1)),
+    attempted_at TEXT NOT NULL
+)
+"""
+LOGIN_ATTEMPT_INDEX = """
+CREATE INDEX IF NOT EXISTS login_attempts_lookup
+ON login_attempts (
+    username COLLATE NOCASE,
+    ip_address,
+    attempted_at
+)
+"""
 
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,6 +52,8 @@ def initialize_database():
 
     try:
         connection.execute(USER_SCHEMA)
+        connection.execute(LOGIN_ATTEMPT_SCHEMA)
+        connection.execute(LOGIN_ATTEMPT_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -228,5 +247,76 @@ def set_user_active(username, is_active):
             raise ValueError("User not found")
 
         connection.commit()
+    finally:
+        connection.close()
+def record_login_attempt(
+    username,
+    ip_address,
+    was_successful,
+):
+    normalized_username = username.strip()[:64]
+    normalized_ip_address = str(
+        ip_address or "unknown"
+    )[:64]
+    attempted_at = datetime.now(timezone.utc).isoformat()
+
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO login_attempts (
+                username,
+                ip_address,
+                was_successful,
+                attempted_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                normalized_username,
+                normalized_ip_address,
+                1 if was_successful else 0,
+                attempted_at,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+def count_recent_failed_login_attempts(
+    username,
+    ip_address,
+    window_minutes=10,
+):
+    normalized_username = username.strip()[:64]
+    normalized_ip_address = str(
+        ip_address or "unknown"
+    )[:64]
+
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=window_minutes)
+    ).isoformat()
+
+    connection = open_database()
+
+    try:
+        result = connection.execute(
+            """
+            SELECT COUNT(*) AS failed_count
+            FROM login_attempts
+            WHERE username = ? COLLATE NOCASE
+              AND ip_address = ?
+              AND was_successful = 0
+              AND attempted_at >= ?
+            """,
+            (
+                normalized_username,
+                normalized_ip_address,
+                cutoff,
+            ),
+        ).fetchone()
+
+        return result["failed_count"]
     finally:
         connection.close()

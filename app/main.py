@@ -19,6 +19,8 @@ from app.database import (
     find_user_by_id,
     find_user_by_username,
     initialize_database,
+    count_recent_failed_login_attempts,
+    record_login_attempt,
 )
 
 app = Flask(__name__)
@@ -155,6 +157,26 @@ def login():
     if not isinstance(username, str) or not isinstance(password, str):
         return jsonify({"error": "Invalid credentials"}), 401
 
+    client_ip = request.remote_addr or "unknown"
+
+    failed_attempts = count_recent_failed_login_attempts(
+        username,
+        client_ip,
+        window_minutes=10,
+    )
+
+    if failed_attempts >= 5:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Too many login attempts. "
+                        "Try again later."
+                    )
+                }
+            ),
+            429,
+        )
     user = find_user_by_username(username)
 
     credentials_are_valid = (
@@ -167,8 +189,19 @@ def login():
     )
 
     if not credentials_are_valid:
+        record_login_attempt(
+            username,
+            client_ip,
+            was_successful=False,
+        )
         return jsonify({"error": "Invalid credentials"}), 401
+    record_login_attempt(
+        username,
+        client_ip,
+        was_successful=True,
+    )
 
+    session.clear()
     session.clear()
     session["user_id"] = user["id"]
     session.permanent = True

@@ -94,9 +94,22 @@ async function loginUser(username, password) {
     });
 
     if (!response.ok) {
-        throw new Error("Invalid credentials");
-    }
+        if (response.status === 429) {
+            throw new Error(
+                "Prea multe încercări. Încearcă din nou peste 10 minute.",
+            );
+        }
 
+        if (response.status === 401) {
+            throw new Error(
+                "Utilizatorul sau parola sunt incorecte.",
+            );
+        }
+
+        throw new Error(
+            `Autentificarea a eșuat: HTTP ${response.status}`,
+        );
+    }
     const data = await response.json();
 
     return data.user;
@@ -411,6 +424,7 @@ loginForm.addEventListener("submit", async (event) => {
         loginForm.reset();
     } catch (error) {
         currentUser = null;
+        loginError.textContent = error.message;
         loginError.hidden = false;
     }
 });
