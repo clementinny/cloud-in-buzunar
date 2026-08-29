@@ -1,11 +1,26 @@
 import hashlib
 import hmac
-from datetime import datetime, timezone
-from pathlib import Path
+import secrets
+from datetime import datetime, timedelta, timezone
 from functools import wraps
+from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory, render_template
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+)
+from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
+
+from app.database import (
+    find_user_by_id,
+    find_user_by_username,
+    initialize_database,
+)
 
 app = Flask(__name__)
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
@@ -22,6 +37,32 @@ API_TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip()
 
 if not API_TOKEN:
     raise RuntimeError("API token cannot be empty")
+
+SECRET_KEY_FILE = DATA_DIR / "flask-secret-key"
+
+if not SECRET_KEY_FILE.exists():
+    SECRET_KEY_FILE.write_text(
+        secrets.token_hex(32),
+        encoding="utf-8",
+    )
+    SECRET_KEY_FILE.chmod(0o600)
+
+FLASK_SECRET_KEY = SECRET_KEY_FILE.read_text(
+    encoding="utf-8"
+).strip()
+
+if not FLASK_SECRET_KEY:
+    raise RuntimeError("Flask secret key cannot be empty")
+
+initialize_database()
+
+app.config.update(
+    SECRET_KEY=FLASK_SECRET_KEY,
+    SESSION_COOKIE_NAME="cloud_in_buzunar_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+)
 
 app.config["UPLOAD_DIR"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
@@ -76,6 +117,66 @@ def health():
             "time": datetime.now(timezone.utc).isoformat(),
         }
     )
+
+def serialize_user(user):
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+    }
+
+
+@app.post("/api/auth/login")
+def login():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    username = payload.get("username", "")
+    password = payload.get("password", "")
+
+    if not isinstance(username, str) or not isinstance(password, str):
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    user = find_user_by_username(username)
+
+    credentials_are_valid = (
+        user is not None
+        and user["is_active"]
+        and check_password_hash(
+            user["password_hash"],
+            password,
+        )
+    )
+
+    if not credentials_are_valid:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    session.clear()
+    session["user_id"] = user["id"]
+    session.permanent = True
+
+    return jsonify({"user": serialize_user(user)})
+
+
+@app.post("/api/auth/logout")
+def logout():
+    session.clear()
+
+    return jsonify({"status": "logged_out"})
+
+
+@app.get("/api/auth/me")
+def current_session():
+    user_id = session.get("user_id")
+    user = find_user_by_id(user_id)
+
+    if user is None or not user["is_active"]:
+        session.clear()
+        return jsonify({"error": "Authentication required"}), 401
+
+    return jsonify({"user": serialize_user(user)})
 
 @app.post("/api/files")
 @require_api_token
