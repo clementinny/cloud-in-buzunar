@@ -1,7 +1,11 @@
 import argparse
 import getpass
 
-from app.database import create_user, initialize_database
+from app.database import (
+    create_user,
+    initialize_database,
+    list_users,
+)
 
 
 def handle_create(arguments):
@@ -30,6 +34,34 @@ def handle_create(arguments):
     return 0
 
 
+def handle_list(_arguments):
+    users = list_users()
+
+    if not users:
+        print("No users found")
+        return 0
+
+    print(
+        f"{'ID':<4} "
+        f"{'USERNAME':<32} "
+        f"{'ROLE':<8} "
+        f"{'ACTIVE':<8} "
+        "CREATED"
+    )
+
+    for user in users:
+        active = "yes" if user["is_active"] else "no"
+
+        print(
+            f"{user['id']:<4} "
+            f"{user['username']:<32} "
+            f"{user['role']:<8} "
+            f"{active:<8} "
+            f"{user['created_at']}"
+        )
+
+    return 0
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Manage CloudInBuzunar users"
@@ -48,7 +80,11 @@ def build_parser():
         default="user",
     )
     create_parser.set_defaults(handler=handle_create)
-
+    list_parser = commands.add_parser(
+        "list",
+        help="List all users",
+    )
+    list_parser.set_defaults(handler=handle_list)
     return parser
 
 

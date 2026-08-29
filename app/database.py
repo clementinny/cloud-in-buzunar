@@ -128,3 +128,23 @@ def find_user_by_id(user_id):
         ).fetchone()
     finally:
         connection.close()
+
+
+def list_users():
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                username,
+                role,
+                is_active,
+                created_at
+            FROM users
+            ORDER BY username COLLATE NOCASE
+            """
+        ).fetchall()
+    finally:
+        connection.close()
