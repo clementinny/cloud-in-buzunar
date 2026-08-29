@@ -148,3 +148,33 @@ def list_users():
         ).fetchall()
     finally:
         connection.close()
+def set_user_password(username, password):
+    normalized_username = username.strip()
+
+    if len(password) < 12:
+        raise ValueError(
+            "Password must contain at least 12 characters"
+        )
+
+    password_hash = generate_password_hash(password)
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET password_hash = ?
+            WHERE username = ? COLLATE NOCASE
+            """,
+            (
+                password_hash, normalized_username,
+
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            raise ValueError("User not found")
+
+        connection.commit()
+    finally:
+        connection.close()

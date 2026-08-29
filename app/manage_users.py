@@ -5,6 +5,7 @@ from app.database import (
     create_user,
     initialize_database,
     list_users,
+    set_user_password,
 )
 
 
@@ -62,6 +63,29 @@ def handle_list(_arguments):
 
     return 0
 
+def handle_set_password(arguments):
+    password = getpass.getpass("New password: ")
+    confirmation = getpass.getpass("Confirm new password: ")
+
+    if password != confirmation:
+        print("Error: passwords do not match")
+        return 1
+
+    try:
+        set_user_password(
+            arguments.username,
+            password,
+        )
+    except ValueError as error:
+        print(f"Error: {error}")
+        return 1
+
+    print(
+        f"Updated password for {arguments.username!r}"
+    )
+
+    return 0
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Manage CloudInBuzunar users"
@@ -85,6 +109,15 @@ def build_parser():
         help="List all users",
     )
     list_parser.set_defaults(handler=handle_list)
+    password_parser = commands.add_parser(
+        "set-password",
+        help="Set a new password for a user",
+    )
+    password_parser.add_argument("username")
+    password_parser.set_defaults(
+        handler=handle_set_password
+    )
+
     return parser
 
 
