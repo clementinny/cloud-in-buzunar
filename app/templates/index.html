@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=11"
+    href="{{ url_for('static', filename='css/app.css') }}?v=16"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=11"
+    src="{{ url_for('static', filename='js/app.js') }}?v=16"
     defer
 ></script>
 </head>
@@ -59,6 +59,47 @@
             Conectare
         </button>
     </div>
+
+
+<div
+    id="vault-mode-switch"
+    class="vault-mode-switch"
+    hidden
+>
+    <button
+        id="personal-vault-button"
+        class="vault-mode-button is-active"
+        type="button"
+    >
+        Seiful meu
+    </button>
+
+    <button
+        id="admin-vault-button"
+        class="vault-mode-button"
+        type="button"
+    >
+        Administrare seifuri
+    </button>
+</div>
+
+<div
+    id="admin-vault-controls"
+    class="admin-vault-controls"
+    hidden
+>
+    <div>
+        <label for="admin-vault-select">
+            Seiful utilizatorului
+        </label>
+
+        <select id="admin-vault-select"></select>
+    </div>
+
+    <p>
+        Mod administrativ complet
+    </p>
+</div>
 
 <div id="folder-toolbar" class="folder-toolbar" hidden>
     <nav

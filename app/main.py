@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.database import (
     initialize_database,
     count_recent_failed_login_attempts,
     record_login_attempt,
+    list_users,
 )
 
 app = Flask(__name__)
@@ -121,6 +123,102 @@ def validate_entry_name(name):
         raise ValueError("Name is too long")
 
     return normalized_name
+
+def build_directory_listing(user, relative_path=""):
+    current_directory = resolve_user_path(
+        user,
+        relative_path,
+    )
+
+    if not current_directory.is_dir():
+        raise FileNotFoundError("Folder not found")
+
+    user_root = get_user_upload_dir(user).resolve()
+
+    current_path = current_directory.relative_to(
+        user_root
+    ).as_posix()
+
+    if current_path == ".":
+        current_path = ""
+
+    parent_path = None
+
+    if current_directory != user_root:
+        parent_path = current_directory.parent.relative_to(
+            user_root
+        ).as_posix()
+
+        if parent_path == ".":
+            parent_path = ""
+
+    children = [
+        path
+        for path in current_directory.iterdir()
+        if not path.is_symlink()
+        and (path.is_dir() or path.is_file())
+    ]
+
+    children.sort(
+        key=lambda path: (
+            not path.is_dir(),
+            path.name.casefold(),
+        )
+    )
+
+    entries = []
+
+    for path in children:
+        file_info = path.stat()
+
+        entry = {
+            "name": path.name,
+            "path": path.relative_to(
+                user_root
+            ).as_posix(),
+            "type": (
+                "folder"
+                if path.is_dir()
+                else "file"
+            ),
+            "modified_at": datetime.fromtimestamp(
+                file_info.st_mtime,
+                timezone.utc,
+            ).isoformat(),
+        }
+
+        if path.is_file():
+            entry["size_bytes"] = file_info.st_size
+
+        entries.append(entry)
+
+    return {
+        "path": current_path,
+        "parent_path": parent_path,
+        "count": len(entries),
+        "entries": entries,
+    }
+
+def send_vault_file(user, relative_path):
+    target = resolve_user_path(
+        user,
+        relative_path,
+    )
+
+    if not target.is_file():
+        raise FileNotFoundError("File not found")
+
+    user_root = get_user_upload_dir(user).resolve()
+    safe_relative_path = target.relative_to(
+        user_root
+    ).as_posix()
+
+    return send_from_directory(
+        user_root,
+        safe_relative_path,
+        as_attachment=True,
+    )
+
 
 def get_session_user():
     user_id = session.get("user_id")
@@ -277,12 +375,8 @@ def current_session():
 
     return jsonify({"user": serialize_user(user)})
 
-@app.post("/api/folders")
-@require_login
-def create_folder():
-    user = get_session_user()
+def create_vault_folder(user):
     payload = request.get_json(silent=True)
-
     if not isinstance(payload, dict):
         return jsonify({"error": "Expected JSON body"}), 400
 
@@ -331,10 +425,30 @@ def create_folder():
         201,
     )
 
-@app.post("/api/files")
+@app.post("/api/folders")
 @require_login
-def upload_file():
+def create_folder():
     user = get_session_user()
+
+    return create_vault_folder(user)
+
+
+@app.post(
+    "/api/admin/vaults/<int:user_id>/folders"
+)
+@require_admin
+def admin_create_folder(user_id):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    return create_vault_folder(target_user)
+
+
+def upload_vault_file(user):
     relative_path = request.form.get("path", "")
 
     try:
@@ -391,6 +505,27 @@ def upload_file():
         201,
     )
 
+@app.post("/api/files")
+@require_login
+def upload_file():
+    user = get_session_user()
+
+    return upload_vault_file(user)
+
+
+@app.post(
+    "/api/admin/vaults/<int:user_id>/files"
+)
+@require_admin
+def admin_upload_file(user_id):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    return upload_vault_file(target_user)
 
 @app.get("/api/files")
 @require_login
@@ -399,86 +534,20 @@ def list_files():
     relative_path = request.args.get("path", "")
 
     try:
-        current_directory = resolve_user_path(
+        listing = build_directory_listing(
             user,
             relative_path,
         )
-    except (ValueError, OSError):
-        return jsonify({"error": "Invalid path"}), 400
-
-    if not current_directory.is_dir():
+    except FileNotFoundError:
         return jsonify(
             {"error": "Folder not found"}
         ), 404
+    except (ValueError, OSError):
+        return jsonify(
+            {"error": "Invalid path"}
+        ), 400
 
-    user_root = get_user_upload_dir(user).resolve()
-
-    current_path = current_directory.relative_to(
-        user_root
-    ).as_posix()
-
-    if current_path == ".":
-        current_path = ""
-
-    parent_path = None
-
-    if current_directory != user_root:
-        parent_path = current_directory.parent.relative_to(
-            user_root
-        ).as_posix()
-
-        if parent_path == ".":
-            parent_path = ""
-
-    children = [
-        path
-        for path in current_directory.iterdir()
-        if not path.is_symlink()
-        and (path.is_dir() or path.is_file())
-    ]
-
-    children.sort(
-        key=lambda path: (
-            not path.is_dir(),
-            path.name.casefold(),
-        )
-    )
-
-    entries = []
-
-    for path in children:
-        file_info = path.stat()
-
-        entry = {
-            "name": path.name,
-            "path": path.relative_to(
-                user_root
-            ).as_posix(),
-            "type": (
-                "folder"
-                if path.is_dir()
-                else "file"
-            ),
-            "modified_at": datetime.fromtimestamp(
-                file_info.st_mtime,
-                timezone.utc,
-            ).isoformat(),
-        }
-
-        if path.is_file():
-            entry["size_bytes"] = file_info.st_size
-
-        entries.append(entry)
-
-    return jsonify(
-        {
-            "path": current_path,
-            "parent_path": parent_path,
-            "count": len(entries),
-            "entries": entries,
-        }
-    )
-
+    return jsonify(listing)
 
 
 @app.get("/api/files/<path:relative_path>")
@@ -487,35 +556,21 @@ def download_file(relative_path):
     user = get_session_user()
 
     try:
-        target = resolve_user_path(
+        return send_vault_file(
             user,
             relative_path,
         )
-    except (ValueError, OSError):
-        return jsonify({"error": "Invalid path"}), 400
-
-    if not target.is_file():
+    except FileNotFoundError:
         return jsonify(
             {"error": "File not found"}
         ), 404
-
-    user_root = get_user_upload_dir(user).resolve()
-    safe_relative_path = target.relative_to(
-        user_root
-    ).as_posix()
-
-    return send_from_directory(
-        user_root,
-        safe_relative_path,
-        as_attachment=True,
-    )
+    except (ValueError, OSError):
+        return jsonify(
+            {"error": "Invalid path"}
+        ), 400
 
 
-@app.delete("/api/files/<path:relative_path>")
-@require_login
-def delete_file(relative_path):
-    user = get_session_user()
-
+def delete_vault_file(user, relative_path):
     try:
         target = resolve_user_path(
             user,
@@ -547,3 +602,210 @@ def delete_file(relative_path):
             "path": deleted_path,
         }
     )
+
+@app.delete("/api/files/<path:relative_path>")
+@require_login
+def delete_file(relative_path):
+    user = get_session_user()
+
+    return delete_vault_file(
+        user,
+        relative_path,
+    )
+
+
+@app.delete(
+    "/api/admin/vaults/<int:user_id>/files/"
+    "<path:relative_path>"
+)
+@require_admin
+def admin_delete_file(user_id, relative_path):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    return delete_vault_file(
+        target_user,
+        relative_path,
+    )
+
+def delete_vault_folder(user, relative_path):
+    try:
+        target = resolve_user_path(
+            user,
+            relative_path,
+        )
+    except (ValueError, OSError):
+        return jsonify(
+            {"error": "Invalid path"}
+        ), 400
+
+    user_root = get_user_upload_dir(user).resolve()
+
+    if target == user_root:
+        return jsonify(
+            {"error": "The vault root cannot be deleted"}
+        ), 400
+
+    if not target.is_dir():
+        return jsonify(
+            {"error": "Folder not found"}
+        ), 404
+
+    deleted_path = target.relative_to(
+        user_root
+    ).as_posix()
+    deleted_name = target.name
+
+    try:
+        shutil.rmtree(target)
+    except FileNotFoundError:
+        return jsonify(
+            {"error": "Folder not found"}
+        ), 404
+    except OSError:
+        return jsonify(
+            {"error": "Folder could not be deleted"}
+        ), 500
+
+    return jsonify(
+        {
+            "deleted": deleted_name,
+            "path": deleted_path,
+            "type": "folder",
+        }
+    )
+
+
+@app.delete("/api/folders/<path:relative_path>")
+@require_login
+def delete_folder(relative_path):
+    user = get_session_user()
+
+    return delete_vault_folder(
+        user,
+        relative_path,
+    )
+
+
+@app.delete(
+    "/api/admin/vaults/<int:user_id>/folders/"
+    "<path:relative_path>"
+)
+@require_admin
+def admin_delete_folder(user_id, relative_path):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    return delete_vault_folder(
+        target_user,
+        relative_path,
+    )
+
+
+@app.get("/api/admin/vaults")
+@require_admin
+def admin_list_vaults():
+    vaults = []
+
+    for user in list_users():
+        listing = build_directory_listing(user)
+
+        vaults.append(
+            {
+                "user": {
+                    "id": user["id"],
+                    "username": user["username"],
+                    "role": user["role"],
+                    "is_active": bool(
+                        user["is_active"]
+                    ),
+                },
+                "entry_count": listing["count"],
+            }
+        )
+
+    return jsonify(
+        {
+            "count": len(vaults),
+            "vaults": vaults,
+        }
+    )
+
+
+@app.get(
+    "/api/admin/vaults/<int:user_id>/files"
+)
+@require_admin
+def admin_list_files(user_id):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    relative_path = request.args.get("path", "")
+
+    try:
+        listing = build_directory_listing(
+            target_user,
+            relative_path,
+        )
+    except FileNotFoundError:
+        return jsonify(
+            {"error": "Folder not found"}
+        ), 404
+    except (ValueError, OSError):
+        return jsonify(
+            {"error": "Invalid path"}
+        ), 400
+
+    listing["owner"] = {
+        "id": target_user["id"],
+        "username": target_user["username"],
+        "role": target_user["role"],
+        "is_active": bool(
+            target_user["is_active"]
+        ),
+    }
+
+    return jsonify(listing)
+
+
+@app.get(
+    "/api/admin/vaults/<int:user_id>/files/"
+    "<path:relative_path>"
+)
+@require_admin
+def admin_download_file(user_id, relative_path):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    try:
+        return send_vault_file(
+            target_user,
+            relative_path,
+        )
+    except FileNotFoundError:
+        return jsonify(
+            {"error": "File not found"}
+        ), 404
+    except (ValueError, OSError):
+        return jsonify(
+            {"error": "Invalid path"}
+        ), 400
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)

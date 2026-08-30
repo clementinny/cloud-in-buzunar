@@ -19,7 +19,16 @@ const backFolderButton =
     document.querySelector("#back-folder-button");
 const newFolderButton =
     document.querySelector("#new-folder-button");
-
+const vaultModeSwitch =
+    document.querySelector("#vault-mode-switch");
+const personalVaultButton =
+    document.querySelector("#personal-vault-button");
+const adminVaultButton =
+    document.querySelector("#admin-vault-button");
+const adminVaultControls =
+    document.querySelector("#admin-vault-controls");
+const adminVaultSelect =
+    document.querySelector("#admin-vault-select");
 const folderDialog =
     document.querySelector("#folder-dialog");
 const folderForm =
@@ -55,6 +64,9 @@ let currentUser = null;
 let currentPath = "";
 let currentParentPath = null;
 
+let vaultMode = "personal";
+let selectedVaultUserId = null;
+let selectedVaultOwner = null;
 const maximumUploadSize = 100 * 1024 * 1024;
 
 let selectedFile = null;
@@ -105,8 +117,29 @@ function selectFile(file) {
     uploadDetails.hidden = false;
 }
 
+function getVaultApiBase() {
+    if (vaultMode !== "admin") {
+        return "/api";
+    }
+
+    if (selectedVaultUserId === null) {
+        throw new Error(
+            "Nu a fost selectat niciun seif.",
+        );
+    }
+
+    const encodedUserId =
+        encodeURIComponent(
+            String(selectedVaultUserId),
+        );
+
+    return `/api/admin/vaults/${encodedUserId}`;
+}
+
 async function createFolder(parentPath, folderName) {
-    const response = await fetch("/api/folders", {
+    const response = await fetch(
+    `${getVaultApiBase()}/folders`,
+    {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -186,6 +219,52 @@ function renderFolderNavigation(path, parentPath) {
     );
 }
 
+async function loadAdminVaults() {
+    const response = await fetch("/api/admin/vaults");
+
+    if (!response.ok) {
+        throw new Error(
+            `Lista seifurilor nu poate fi încărcată: HTTP ${response.status}`,
+        );
+    }
+
+    const data = await response.json();
+
+    adminVaultSelect.replaceChildren();
+
+    for (const vault of data.vaults) {
+        const option = document.createElement("option");
+        const entryLabel =
+            vault.entry_count === 1 ? "element" : "elemente";
+
+        option.value = String(vault.user.id);
+        option.textContent =
+            `${vault.user.username} · ` +
+            `${vault.entry_count} ${entryLabel}`;
+
+        adminVaultSelect.append(option);
+    }
+
+    if (data.vaults.length === 0) {
+        selectedVaultUserId = null;
+        selectedVaultOwner = null;
+        return [];
+    }
+
+    const selectedVault =
+        data.vaults.find(
+            (vault) =>
+                vault.user.id === selectedVaultUserId,
+        ) ?? data.vaults[0];
+
+    selectedVaultUserId = selectedVault.user.id;
+    selectedVaultOwner = selectedVault.user;
+    adminVaultSelect.value =
+        String(selectedVaultUserId);
+
+    return data.vaults;
+}
+
 async function loginUser(username, password) {
     const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -255,9 +334,10 @@ function uploadFile(file, path) {
 
         formData.append("file", file);
         formData.append("path", path);
-        request.open("POST", "/api/files");
-
-
+        request.open(
+    "POST",
+    `${getVaultApiBase()}/files`,
+);
 
         request.upload.addEventListener("progress", (event) => {
             if (!event.lengthComputable) {
@@ -319,7 +399,7 @@ async function openFile(relativePath) {
         const encodedPath = encodedRelativePath(relativePath);
 
         const response = await fetch(
-    `/api/files/${encodedPath}`,
+    `${getVaultApiBase()}/files/${encodedPath}`,
 );
 
         if (!response.ok) {
@@ -346,7 +426,7 @@ async function deleteFile(relativePath) {
     const encodedPath = encodeRelativePath(relativePath);
 
     const response = await fetch(
-    `/api/files/${encodedPath}`,
+    `${getVaultApiBase()}/files/${encodedPath}`,
     {
         method: "DELETE",
     },
@@ -356,6 +436,34 @@ async function deleteFile(relativePath) {
         throw new Error(
             `Fișierul nu poate fi șters: HTTP ${response.status}`,
         );
+    }
+
+    return response.json();
+}
+
+async function deleteFolder(relativePath) {
+    const encodedPath =
+        encodeRelativePath(relativePath);
+
+    const response = await fetch(
+        `${getVaultApiBase()}/folders/${encodedPath}`,
+        {
+            method: "DELETE",
+        },
+    );
+
+    if (!response.ok) {
+        let message =
+            `Folderul nu poate fi șters: HTTP ${response.status}`;
+
+        if (response.status === 404) {
+            message = "Folderul nu mai există.";
+        } else if (response.status === 400) {
+            message =
+                "Folderul nu poate fi șters din această locație.";
+        }
+
+        throw new Error(message);
     }
 
     return response.json();
@@ -434,94 +542,151 @@ function renderFiles(entries) {
         information.append(name, details);
         actions.append(openButton);
 
-        if (entry.type === "file") {
-            const deleteButton =
-                document.createElement("button");
+        const deleteButton =
+    document.createElement("button");
 
-            deleteButton.className = "delete-button";
-            deleteButton.textContent = "Șterge";
-            deleteButton.type = "button";
+deleteButton.className = "delete-button";
+deleteButton.textContent = "Șterge";
+deleteButton.type = "button";
 
-            deleteButton.addEventListener(
-                "click",
-                async () => {
-                    const confirmed = window.confirm(
-                        `Ștergi definitiv fișierul „${entry.name}”?`,
-                    );
+deleteButton.addEventListener(
+    "click",
+    async () => {
+        const confirmationMessage =
+            entry.type === "folder"
+                ? (
+                    `Ștergi folderul „${entry.name}” ` +
+                    "și TOT conținutul lui? " +
+                    "Acțiunea nu poate fi anulată."
+                )
+                : (
+                    `Ștergi definitiv fișierul ` +
+                    `„${entry.name}”?`
+                );
 
-                    if (!confirmed) {
-                        return;
-                    }
+        const confirmed =
+            window.confirm(confirmationMessage);
 
-                    deleteButton.disabled = true;
-                    deleteButton.textContent =
-                        "Se șterge...";
-
-                    try {
-                        await deleteFile(entry.path);
-                        await loadFiles(currentPath);
-
-                        filesMessage.textContent =
-                            `${entry.name} a fost șters.`;
-                        filesMessage.classList.remove(
-                            "is-error",
-                        );
-                        filesMessage.hidden = false;
-                    } catch (error) {
-                        filesMessage.textContent =
-                            error.message;
-                        filesMessage.classList.add(
-                            "is-error",
-                        );
-                        filesMessage.hidden = false;
-
-                        deleteButton.disabled = false;
-                        deleteButton.textContent =
-                            "Șterge";
-                    }
-                },
-            );
-
-            actions.append(deleteButton);
+        if (!confirmed) {
+            return;
         }
+
+        deleteButton.disabled = true;
+        deleteButton.textContent = "Se șterge...";
+
+        try {
+            if (entry.type === "folder") {
+                await deleteFolder(entry.path);
+            } else {
+                await deleteFile(entry.path);
+            }
+
+            await loadFiles(currentPath);
+
+            filesMessage.textContent =
+                entry.type === "folder"
+                    ? `Folderul ${entry.name} a fost șters.`
+                    : `${entry.name} a fost șters.`;
+
+            filesMessage.classList.remove(
+                "is-error",
+            );
+            filesMessage.hidden = false;
+        } catch (error) {
+            filesMessage.textContent =
+                error.message;
+            filesMessage.classList.add(
+                "is-error",
+            );
+            filesMessage.hidden = false;
+
+            deleteButton.disabled = false;
+            deleteButton.textContent = "Șterge";
+        }
+    },
+);
+
+actions.append(deleteButton);
+
 
         item.append(information, actions);
         fileList.append(item);
     }
 }
 
+
 function showDisconnectedState() {
     currentUser = null;
     currentPath = "";
     currentParentPath = null;
+
+    vaultMode = "personal";
+    selectedVaultUserId = null;
+    selectedVaultOwner = null;
+
+    vaultModeSwitch.hidden = true;
+    adminVaultControls.hidden = true;
+    adminVaultSelect.replaceChildren();
+
+    personalVaultButton.classList.add("is-active");
+    adminVaultButton.classList.remove("is-active");
+
     folderToolbar.hidden = true;
     folderBreadcrumbs.replaceChildren();
+    newFolderButton.hidden = false;
+
     connectionStatus.textContent = "Neconectat";
     loginButton.textContent = "Conectare";
+
     filesMessage.textContent =
         "Conectează-te pentru a vedea fișierele.";
     filesMessage.hidden = false;
+
     fileList.replaceChildren();
     uploadForm.hidden = true;
     clearSelectedFile();
+
     uploadMessage.textContent = "";
     uploadMessage.classList.remove("is-error");
     uploadMessage.hidden = true;
 }
 
-function showConnectedState(fileCount) {
-    const label = fileCount === 1 ? "element" : "elemente";
-    const roleLabel =
-        currentUser.role === "admin"
-            ? "administrator"
-            : "utilizator";
 
-    connectionStatus.textContent =
-        `${currentUser.username} · ${roleLabel} · ` +
-        `${fileCount} ${label}`;
+function showConnectedState(fileCount) {
+    const label =
+        fileCount === 1 ? "element" : "elemente";
+
+    vaultModeSwitch.hidden =
+        currentUser.role !== "admin";
+
+    if (vaultMode === "admin") {
+        const ownerName =
+            selectedVaultOwner?.username ??
+            "utilizator necunoscut";
+
+        connectionStatus.textContent =
+            `Administrezi seiful lui ${ownerName} · ` +
+            `${fileCount} ${label}`;
+
+        uploadForm.hidden = false;
+        newFolderButton.hidden = false;
+        adminVaultControls.hidden = false;
+    } else {
+        const roleLabel =
+            currentUser.role === "admin"
+                ? "administrator"
+                : "utilizator";
+
+        connectionStatus.textContent =
+            `${currentUser.username} · ${roleLabel} · ` +
+            `${fileCount} ${label}`;
+
+        uploadForm.hidden = false;
+        newFolderButton.hidden = false;
+        adminVaultControls.hidden = true;
+    }
 
     loginButton.textContent = "Deconectare";
-    uploadForm.hidden = false;
 }
 
 async function loadFiles(path = currentPath) {
@@ -529,9 +694,26 @@ async function loadFiles(path = currentPath) {
         path,
     });
 
-    const response = await fetch(
-        `/api/files?${query.toString()}`,
-    );
+    let endpoint = `/api/files?${query.toString()}`;
+
+    if (vaultMode === "admin") {
+        if (selectedVaultUserId === null) {
+            throw new Error(
+                "Nu a fost selectat niciun seif.",
+            );
+        }
+
+        const encodedUserId =
+            encodeURIComponent(
+                String(selectedVaultUserId),
+            );
+
+        endpoint =
+            `/api/admin/vaults/${encodedUserId}/files` +
+            `?${query.toString()}`;
+    }
+
+    const response = await fetch(endpoint);
 
     if (!response.ok) {
         throw new Error(
@@ -541,6 +723,10 @@ async function loadFiles(path = currentPath) {
 
     const data = await response.json();
 
+    if (vaultMode === "admin") {
+        selectedVaultOwner = data.owner;
+    }
+
     renderFolderNavigation(
         data.path,
         data.parent_path,
@@ -549,6 +735,109 @@ async function loadFiles(path = currentPath) {
     renderFiles(data.entries);
     showConnectedState(data.count);
 }
+
+
+function showVaultError(error) {
+    filesMessage.textContent = error.message;
+    filesMessage.classList.add("is-error");
+    filesMessage.hidden = false;
+}
+
+
+personalVaultButton.addEventListener(
+    "click",
+    async () => {
+        vaultMode = "personal";
+        selectedVaultUserId = null;
+        selectedVaultOwner = null;
+        currentPath = "";
+        currentParentPath = null;
+
+        personalVaultButton.classList.add(
+            "is-active",
+        );
+        adminVaultButton.classList.remove(
+            "is-active",
+        );
+        adminVaultControls.hidden = true;
+
+        try {
+            await loadFiles("");
+        } catch (error) {
+            showVaultError(error);
+        }
+    },
+);
+
+
+adminVaultButton.addEventListener(
+    "click",
+    async () => {
+        if (
+            currentUser === null ||
+            currentUser.role !== "admin"
+        ) {
+            return;
+        }
+
+        vaultMode = "admin";
+        currentPath = "";
+        currentParentPath = null;
+
+        personalVaultButton.classList.remove(
+            "is-active",
+        );
+        adminVaultButton.classList.add(
+            "is-active",
+        );
+        adminVaultControls.hidden = false;
+
+        try {
+            const vaults = await loadAdminVaults();
+
+            if (vaults.length === 0) {
+                fileList.replaceChildren();
+                folderToolbar.hidden = true;
+                uploadForm.hidden = true;
+
+                filesMessage.textContent =
+                    "Nu există seifuri.";
+                filesMessage.hidden = false;
+                return;
+            }
+
+            await loadFiles("");
+        } catch (error) {
+            showVaultError(error);
+        }
+    },
+);
+
+
+adminVaultSelect.addEventListener(
+    "change",
+    async () => {
+        const userId = Number.parseInt(
+            adminVaultSelect.value,
+            10,
+        );
+
+        if (!Number.isInteger(userId)) {
+            return;
+        }
+
+        selectedVaultUserId = userId;
+        selectedVaultOwner = null;
+        currentPath = "";
+        currentParentPath = null;
+
+        try {
+            await loadFiles("");
+        } catch (error) {
+            showVaultError(error);
+        }
+    },
+);
 
 
 loginButton.addEventListener("click", async () => {
