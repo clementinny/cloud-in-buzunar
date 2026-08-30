@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}"
+    href="{{ url_for('static', filename='css/app.css') }}?v=11"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=9"
+    src="{{ url_for('static', filename='js/app.js') }}?v=11"
     defer
 ></script>
 </head>
@@ -59,6 +59,30 @@
             Conectare
         </button>
     </div>
+
+<div id="folder-toolbar" class="folder-toolbar" hidden>
+    <nav
+        id="folder-breadcrumbs"
+        class="folder-breadcrumbs"
+        aria-label="Folderul curent"
+    ></nav>
+
+    <div class="folder-toolbar-actions">
+        <button
+            id="back-folder-button"
+            class="secondary-button"
+            type="button"
+            disabled
+        >
+            ← Înapoi
+        </button>
+
+        <button id="new-folder-button" type="button">
+            + Folder nou
+        </button>
+    </div>
+</div>
+
 <form id="upload-form" class="upload-panel" hidden>
     <label id="drop-zone" class="drop-zone" for="file-input">
         <input id="file-input" type="file" hidden>
@@ -112,7 +136,6 @@
     <ul id="file-list" aria-live="polite"></ul>
 </section>
     </main>
-</body>
 
 <dialog id="login-dialog">
     <form id="login-form">
@@ -164,5 +187,52 @@
     </form>
 </dialog>
 
+<dialog id="folder-dialog">
+    <form id="folder-form">
+        <div>
+            <p class="dialog-label">File Vault</p>
+            <h2>Folder nou</h2>
+            <p class="dialog-description">
+                Creează un folder în compartimentul curent.
+            </p>
+        </div>
+
+        <label for="folder-name-input">
+            Numele folderului
+        </label>
+
+        <input
+            id="folder-name-input"
+            name="folder-name"
+            type="text"
+            maxlength="100"
+            autocomplete="off"
+            required
+        >
+
+        <p
+            id="folder-error"
+            class="form-error"
+            role="alert"
+            hidden
+        ></p>
+
+        <div class="dialog-actions">
+            <button
+                id="cancel-folder-button"
+                class="secondary-button"
+                type="button"
+            >
+                Renunță
+            </button>
+
+            <button type="submit">
+                Creează folderul
+            </button>
+        </div>
+    </form>
+</dialog>
+
+</body>
 
 </html>

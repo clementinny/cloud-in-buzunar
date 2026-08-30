@@ -550,3 +550,78 @@ progress::-moz-progress-bar {
         flex: 1;
     }
 }
+.folder-toolbar {
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 18px 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.folder-toolbar:not([hidden]) {
+    display: flex;
+}
+
+.folder-breadcrumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.breadcrumb-button {
+    min-height: 36px;
+    flex-shrink: 0;
+    padding: 7px 10px;
+    color: var(--muted);
+    border-color: transparent;
+    background: transparent;
+    white-space: nowrap;
+}
+
+.breadcrumb-button:hover:not(:disabled) {
+    color: white;
+    border-color: var(--border);
+    background: rgba(139, 92, 246, 0.12);
+}
+
+.breadcrumb-button[aria-current="page"] {
+    color: white;
+    background: rgba(139, 92, 246, 0.22);
+}
+
+.breadcrumb-separator {
+    flex-shrink: 0;
+    color: var(--muted);
+}
+
+.folder-toolbar-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.form-error {
+    margin: 0;
+    color: #fca5a5;
+}
+
+@media (max-width: 520px) {
+    .folder-toolbar:not([hidden]) {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .folder-toolbar-actions {
+        width: 100%;
+    }
+
+    .folder-toolbar-actions button {
+        flex: 1;
+    }
+}

@@ -13,7 +13,6 @@ from flask import (
     session,
 )
 from werkzeug.security import check_password_hash
-from werkzeug.utils import secure_filename
 
 from app.database import (
     find_user_by_id,
@@ -71,6 +70,57 @@ def calculate_sha256(path: Path) -> str:
 
     return digest.hexdigest()
 
+def get_user_upload_dir(user):
+    user_upload_dir = (
+        app.config["UPLOAD_DIR"] / str(user["id"])
+    )
+
+    user_upload_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    return user_upload_dir
+
+
+def resolve_user_path(user, relative_path=""):
+    user_upload_dir = get_user_upload_dir(user).resolve()
+
+    requested_path = (
+        user_upload_dir / relative_path
+    ).resolve()
+
+    if (
+        requested_path != user_upload_dir
+        and user_upload_dir not in requested_path.parents
+    ):
+        raise ValueError("Path escapes the user vault")
+
+    return requested_path
+
+def validate_entry_name(name):
+    if not isinstance(name, str):
+        raise ValueError("Name must be text")
+
+    normalized_name = name.strip()
+
+    if not normalized_name:
+        raise ValueError("Name cannot be empty")
+
+    if normalized_name in {".", ".."}:
+        raise ValueError("Invalid name")
+
+    if (
+        "/" in normalized_name
+        or "\\" in normalized_name
+        or "\0" in normalized_name
+    ):
+        raise ValueError("Name contains invalid characters")
+
+    if len(normalized_name.encode("utf-8")) > 200:
+        raise ValueError("Name is too long")
+
+    return normalized_name
 
 def get_session_user():
     user_id = session.get("user_id")
@@ -227,93 +277,273 @@ def current_session():
 
     return jsonify({"user": serialize_user(user)})
 
-@app.post("/api/files")
+@app.post("/api/folders")
 @require_login
-def upload_file():
-    if "file" not in request.files:
-        return jsonify({"error": "Missing form field: file"}), 400
+def create_folder():
+    user = get_session_user()
+    payload = request.get_json(silent=True)
 
-    uploaded_file = request.files["file"]
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
 
-    if uploaded_file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
+    parent_path = payload.get("path", "")
+    folder_name = payload.get("name", "")
 
-    filename = secure_filename(uploaded_file.filename)
+    if not isinstance(parent_path, str):
+        return jsonify({"error": "Invalid parent path"}), 400
 
-    if not filename:
-        return jsonify({"error": "Invalid filename"}), 400
+    try:
+        safe_name = validate_entry_name(folder_name)
+        parent_directory = resolve_user_path(
+            user,
+            parent_path,
+        )
+    except (ValueError, OSError) as error:
+        return jsonify({"error": str(error)}), 400
 
-    destination = app.config["UPLOAD_DIR"] / filename
+    if not parent_directory.is_dir():
+        return jsonify(
+            {"error": "Parent folder not found"}
+        ), 404
 
-    if destination.exists():
-        return jsonify({"error": "File already exists"}), 409
+    new_directory = parent_directory / safe_name
 
-    uploaded_file.save(str(destination))
+    try:
+        new_directory.mkdir()
+    except FileExistsError:
+        return jsonify(
+            {"error": "A file or folder already has this name"}
+        ), 409
+
+    user_root = get_user_upload_dir(user).resolve()
+    relative_path = new_directory.relative_to(
+        user_root
+    ).as_posix()
 
     return (
         jsonify(
             {
-                "filename": filename,
+                "name": safe_name,
+                "path": relative_path,
+                "type": "folder",
+            }
+        ),
+        201,
+    )
+
+@app.post("/api/files")
+@require_login
+def upload_file():
+    user = get_session_user()
+    relative_path = request.form.get("path", "")
+
+    try:
+        current_directory = resolve_user_path(
+            user,
+            relative_path,
+        )
+    except (ValueError, OSError):
+        return jsonify({"error": "Invalid path"}), 400
+
+    if not current_directory.is_dir():
+        return jsonify(
+            {"error": "Folder not found"}
+        ), 404
+
+    if "file" not in request.files:
+        return jsonify(
+            {"error": "Missing form field: file"}
+        ), 400
+
+    uploaded_file = request.files["file"]
+
+    try:
+        filename = validate_entry_name(
+            uploaded_file.filename
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    destination = current_directory / filename
+
+    if destination.exists():
+        return jsonify(
+            {"error": "File already exists"}
+        ), 409
+
+    uploaded_file.save(str(destination))
+
+    user_root = get_user_upload_dir(user).resolve()
+    file_path = destination.relative_to(
+        user_root
+    ).as_posix()
+
+    return (
+        jsonify(
+            {
+                "name": filename,
+                "path": file_path,
+                "type": "file",
                 "size_bytes": destination.stat().st_size,
                 "sha256": calculate_sha256(destination),
             }
         ),
         201,
     )
+
+
 @app.get("/api/files")
 @require_login
 def list_files():
-    files = []
+    user = get_session_user()
+    relative_path = request.args.get("path", "")
 
-    for path in sorted(app.config["UPLOAD_DIR"].iterdir()):
-        if not path.is_file():
-            continue
+    try:
+        current_directory = resolve_user_path(
+            user,
+            relative_path,
+        )
+    except (ValueError, OSError):
+        return jsonify({"error": "Invalid path"}), 400
 
+    if not current_directory.is_dir():
+        return jsonify(
+            {"error": "Folder not found"}
+        ), 404
+
+    user_root = get_user_upload_dir(user).resolve()
+
+    current_path = current_directory.relative_to(
+        user_root
+    ).as_posix()
+
+    if current_path == ".":
+        current_path = ""
+
+    parent_path = None
+
+    if current_directory != user_root:
+        parent_path = current_directory.parent.relative_to(
+            user_root
+        ).as_posix()
+
+        if parent_path == ".":
+            parent_path = ""
+
+    children = [
+        path
+        for path in current_directory.iterdir()
+        if not path.is_symlink()
+        and (path.is_dir() or path.is_file())
+    ]
+
+    children.sort(
+        key=lambda path: (
+            not path.is_dir(),
+            path.name.casefold(),
+        )
+    )
+
+    entries = []
+
+    for path in children:
         file_info = path.stat()
 
-        files.append(
-            {
-                "filename": path.name,
-                "size_bytes": file_info.st_size,
-                "modified_at": datetime.fromtimestamp(
-                    file_info.st_mtime,
-                    timezone.utc,
-                ).isoformat(),
-            }
-        )
+        entry = {
+            "name": path.name,
+            "path": path.relative_to(
+                user_root
+            ).as_posix(),
+            "type": (
+                "folder"
+                if path.is_dir()
+                else "file"
+            ),
+            "modified_at": datetime.fromtimestamp(
+                file_info.st_mtime,
+                timezone.utc,
+            ).isoformat(),
+        }
+
+        if path.is_file():
+            entry["size_bytes"] = file_info.st_size
+
+        entries.append(entry)
 
     return jsonify(
         {
-            "count": len(files),
-            "files": files,
+            "path": current_path,
+            "parent_path": parent_path,
+            "count": len(entries),
+            "entries": entries,
         }
     )
-@app.get("/api/files/<filename>")
+
+
+
+@app.get("/api/files/<path:relative_path>")
 @require_login
-def download_file(filename):
-    return send_from_directory(
-        app.config["UPLOAD_DIR"],
-        filename,
-        as_attachment=True,
-    )
-@app.delete("/api/files/<filename>")
-@require_admin
-def delete_file(filename):
-    safe_name = secure_filename(filename)
+def download_file(relative_path):
+    user = get_session_user()
 
-    if not safe_name or safe_name != filename:
-        return jsonify({"error": "Invalid filename"}), 400
-
-    target = app.config["UPLOAD_DIR"] / safe_name
+    try:
+        target = resolve_user_path(
+            user,
+            relative_path,
+        )
+    except (ValueError, OSError):
+        return jsonify({"error": "Invalid path"}), 400
 
     if not target.is_file():
-        return jsonify({"error": "File not found"}), 404
+        return jsonify(
+            {"error": "File not found"}
+        ), 404
+
+    user_root = get_user_upload_dir(user).resolve()
+    safe_relative_path = target.relative_to(
+        user_root
+    ).as_posix()
+
+    return send_from_directory(
+        user_root,
+        safe_relative_path,
+        as_attachment=True,
+    )
+
+
+@app.delete("/api/files/<path:relative_path>")
+@require_login
+def delete_file(relative_path):
+    user = get_session_user()
+
+    try:
+        target = resolve_user_path(
+            user,
+            relative_path,
+        )
+    except (ValueError, OSError):
+        return jsonify({"error": "Invalid path"}), 400
+
+    if not target.is_file():
+        return jsonify(
+            {"error": "File not found"}
+        ), 404
+
+    user_root = get_user_upload_dir(user).resolve()
+    deleted_path = target.relative_to(
+        user_root
+    ).as_posix()
 
     try:
         target.unlink()
     except FileNotFoundError:
-        return jsonify({"error": "File not found"}), 404
+        return jsonify(
+            {"error": "File not found"}
+        ), 404
 
-    return jsonify({"deleted": safe_name})
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    return jsonify(
+        {
+            "deleted": target.name,
+            "path": deleted_path,
+        }
+    )

@@ -11,6 +11,26 @@ const connectionStatus = document.querySelector("#connection-status");
 const filesMessage = document.querySelector("#files-message");
 const fileList = document.querySelector("#file-list");
 
+const folderToolbar =
+    document.querySelector("#folder-toolbar");
+const folderBreadcrumbs =
+    document.querySelector("#folder-breadcrumbs");
+const backFolderButton =
+    document.querySelector("#back-folder-button");
+const newFolderButton =
+    document.querySelector("#new-folder-button");
+
+const folderDialog =
+    document.querySelector("#folder-dialog");
+const folderForm =
+    document.querySelector("#folder-form");
+const folderNameInput =
+    document.querySelector("#folder-name-input");
+const folderError =
+    document.querySelector("#folder-error");
+const cancelFolderButton =
+    document.querySelector("#cancel-folder-button");
+
 const uploadForm = document.querySelector("#upload-form");
 const dropZone = document.querySelector("#drop-zone");
 const fileInput = document.querySelector("#file-input");
@@ -31,6 +51,10 @@ const uploadPercent =
 const uploadMessage =
     document.querySelector("#upload-message");
 let currentUser = null;
+
+let currentPath = "";
+let currentParentPath = null;
+
 const maximumUploadSize = 100 * 1024 * 1024;
 
 let selectedFile = null;
@@ -79,6 +103,87 @@ function selectFile(file) {
     selectedFileName.textContent = file.name;
     selectedFileSize.textContent = formatBytes(file.size);
     uploadDetails.hidden = false;
+}
+
+async function createFolder(parentPath, folderName) {
+    const response = await fetch("/api/folders", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            path: parentPath,
+            name: folderName,
+        }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(
+            data.error ?? `HTTP ${response.status}`,
+        );
+    }
+
+    return data;
+}
+
+function renderFolderNavigation(path, parentPath) {
+    currentPath = path;
+    currentParentPath = parentPath;
+
+    folderToolbar.hidden = false;
+    backFolderButton.disabled = parentPath === null;
+    folderBreadcrumbs.replaceChildren();
+
+    function addBreadcrumb(label, targetPath) {
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.className = "breadcrumb-button";
+        button.textContent = label;
+
+        button.addEventListener("click", () => {
+            loadFiles(targetPath).catch((error) => {
+                filesMessage.textContent = error.message;
+                filesMessage.classList.add("is-error");
+                filesMessage.hidden = false;
+            });
+        });
+
+        folderBreadcrumbs.append(button);
+    }
+
+    addBreadcrumb("Acasă", "");
+
+    if (!path) {
+        return;
+    }
+
+    let accumulatedPath = "";
+
+    for (const part of path.split("/")) {
+        const separator = document.createElement("span");
+
+        separator.className = "breadcrumb-separator";
+        separator.textContent = "/";
+
+        folderBreadcrumbs.append(separator);
+
+        accumulatedPath = accumulatedPath
+            ? `${accumulatedPath}/${part}`
+            : part;
+
+        addBreadcrumb(part, accumulatedPath);
+    }
+
+    const currentButton =
+        folderBreadcrumbs.lastElementChild;
+
+    currentButton?.setAttribute(
+        "aria-current",
+        "page",
+    );
 }
 
 async function loginUser(username, password) {
@@ -143,13 +248,13 @@ async function restoreSession() {
     return data.user;
 }
 
-function uploadFile(file) {
+function uploadFile(file, path) {
     return new Promise((resolve, reject) => {
         const formData = new FormData();
         const request = new XMLHttpRequest();
 
         formData.append("file", file);
-
+        formData.append("path", path);
         request.open("POST", "/api/files");
 
 
@@ -194,7 +299,14 @@ function uploadFile(file) {
     });
 }
 
-async function openFile(filename) {
+function encodeRelativePath(path) {
+    return path
+        .split("/")
+        .map((part) => encodeURIComponent(part))
+        .join("/");
+}
+
+async function openFile(relativePath) {
     const previewWindow = window.open("about:blank", "_blank");
 
     if (!previewWindow) {
@@ -204,10 +316,10 @@ async function openFile(filename) {
     }
 
     try {
-        const encodedFilename = encodeURIComponent(filename);
+        const encodedPath = encodedRelativePath(relativePath);
 
         const response = await fetch(
-    `/api/files/${encodedFilename}`,
+    `/api/files/${encodedPath}`,
 );
 
         if (!response.ok) {
@@ -230,11 +342,11 @@ async function openFile(filename) {
     }
 }
 
-async function deleteFile(filename) {
-    const encodedFilename = encodeURIComponent(filename);
+async function deleteFile(relativePath) {
+    const encodedPath = encodeRelativePath(relativePath);
 
     const response = await fetch(
-    `/api/files/${encodedFilename}`,
+    `/api/files/${encodedPath}`,
     {
         method: "DELETE",
     },
@@ -248,11 +360,13 @@ async function deleteFile(filename) {
 
     return response.json();
 }
-function renderFiles(files) {
+
+function renderFiles(entries) {
     fileList.replaceChildren();
 
-    if (files.length === 0) {
-        filesMessage.textContent = "Nu există fișiere încă.";
+    if (entries.length === 0) {
+        filesMessage.textContent =
+            "Folderul este gol.";
         filesMessage.classList.remove("is-error");
         filesMessage.hidden = false;
         return;
@@ -260,14 +374,13 @@ function renderFiles(files) {
 
     filesMessage.hidden = true;
 
-    for (const file of files) {
+    for (const entry of entries) {
         const item = document.createElement("li");
         const information = document.createElement("div");
         const actions = document.createElement("div");
         const name = document.createElement("span");
         const details = document.createElement("span");
         const openButton = document.createElement("button");
-        const deleteButton = document.createElement("button");
 
         item.className = "file-row";
         information.className = "file-information";
@@ -275,76 +388,115 @@ function renderFiles(files) {
         name.className = "file-name";
         details.className = "file-details";
         openButton.className = "file-open-button";
-        deleteButton.className = "delete-button";
 
-        name.textContent = file.filename;
-        details.textContent = formatBytes(file.size_bytes);
+        if (entry.type === "folder") {
+            name.textContent = `📁 ${entry.name}`;
+            details.textContent = "Folder";
+            openButton.textContent = "Deschide";
+        } else {
+            name.textContent = `📄 ${entry.name}`;
+            details.textContent =
+                formatBytes(entry.size_bytes);
+            openButton.textContent = "Deschide";
+        }
 
-        openButton.textContent = "Deschide";
         openButton.type = "button";
 
-        deleteButton.textContent = "Șterge";
-        deleteButton.type = "button";
+        openButton.addEventListener(
+            "click",
+            async () => {
+                openButton.disabled = true;
+                openButton.textContent =
+                    entry.type === "folder"
+                        ? "Se deschide..."
+                        : "Se încarcă...";
 
-        openButton.addEventListener("click", async () => {
-            openButton.disabled = true;
-            openButton.textContent = "Se deschide...";
-
-            try {
-                await openFile(file.filename);
-            } catch (error) {
-                filesMessage.textContent = error.message;
-                filesMessage.classList.add("is-error");
-                filesMessage.hidden = false;
-            } finally {
-                openButton.disabled = false;
-                openButton.textContent = "Deschide";
-            }
-        });
-
-        deleteButton.addEventListener("click", async () => {
-            const confirmed = window.confirm(
-                `Ștergi definitiv fișierul „${file.filename}”?`,
-            );
-
-            if (!confirmed) {
-                return;
-            }
-
-            deleteButton.disabled = true;
-            deleteButton.textContent = "Se șterge...";
-
-            try {
-                await deleteFile(file.filename);
-                await loadFiles();
-
-                filesMessage.textContent =
-                    `${file.filename} a fost șters.`;
-                filesMessage.classList.remove("is-error");
-                filesMessage.hidden = false;
-            } catch (error) {
-                filesMessage.textContent = error.message;
-                filesMessage.classList.add("is-error");
-                filesMessage.hidden = false;
-
-                deleteButton.disabled = false;
-                deleteButton.textContent = "Șterge";
-            }
-        });
+                try {
+                    if (entry.type === "folder") {
+                        await loadFiles(entry.path);
+                    } else {
+                        await openFile(entry.path);
+                    }
+                } catch (error) {
+                    filesMessage.textContent =
+                        error.message;
+                    filesMessage.classList.add(
+                        "is-error",
+                    );
+                    filesMessage.hidden = false;
+                } finally {
+                    openButton.disabled = false;
+                    openButton.textContent = "Deschide";
+                }
+            },
+        );
 
         information.append(name, details);
         actions.append(openButton);
 
-if (currentUser?.role === "admin") {
-    actions.append(deleteButton);
-}
+        if (entry.type === "file") {
+            const deleteButton =
+                document.createElement("button");
+
+            deleteButton.className = "delete-button";
+            deleteButton.textContent = "Șterge";
+            deleteButton.type = "button";
+
+            deleteButton.addEventListener(
+                "click",
+                async () => {
+                    const confirmed = window.confirm(
+                        `Ștergi definitiv fișierul „${entry.name}”?`,
+                    );
+
+                    if (!confirmed) {
+                        return;
+                    }
+
+                    deleteButton.disabled = true;
+                    deleteButton.textContent =
+                        "Se șterge...";
+
+                    try {
+                        await deleteFile(entry.path);
+                        await loadFiles(currentPath);
+
+                        filesMessage.textContent =
+                            `${entry.name} a fost șters.`;
+                        filesMessage.classList.remove(
+                            "is-error",
+                        );
+                        filesMessage.hidden = false;
+                    } catch (error) {
+                        filesMessage.textContent =
+                            error.message;
+                        filesMessage.classList.add(
+                            "is-error",
+                        );
+                        filesMessage.hidden = false;
+
+                        deleteButton.disabled = false;
+                        deleteButton.textContent =
+                            "Șterge";
+                    }
+                },
+            );
+
+            actions.append(deleteButton);
+        }
+
         item.append(information, actions);
         fileList.append(item);
     }
 }
+
 function showDisconnectedState() {
-currentUser = null;    
-connectionStatus.textContent = "Neconectat";
+    currentUser = null;
+    currentPath = "";
+    currentParentPath = null;
+    folderToolbar.hidden = true;
+    folderBreadcrumbs.replaceChildren();
+    connectionStatus.textContent = "Neconectat";
     loginButton.textContent = "Conectare";
     filesMessage.textContent =
         "Conectează-te pentru a vedea fișierele.";
@@ -352,10 +504,13 @@ connectionStatus.textContent = "Neconectat";
     fileList.replaceChildren();
     uploadForm.hidden = true;
     clearSelectedFile();
+    uploadMessage.textContent = "";
+    uploadMessage.classList.remove("is-error");
+    uploadMessage.hidden = true;
 }
 
 function showConnectedState(fileCount) {
-    const label = fileCount === 1 ? "fișier" : "fișiere";
+    const label = fileCount === 1 ? "element" : "elemente";
     const roleLabel =
         currentUser.role === "admin"
             ? "administrator"
@@ -369,18 +524,32 @@ function showConnectedState(fileCount) {
     uploadForm.hidden = false;
 }
 
-async function loadFiles() {
-    const response = await fetch("/api/files");
+async function loadFiles(path = currentPath) {
+    const query = new URLSearchParams({
+        path,
+    });
+
+    const response = await fetch(
+        `/api/files?${query.toString()}`,
+    );
 
     if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
+        throw new Error(
+            `API returned ${response.status}`,
+        );
     }
 
     const data = await response.json();
 
-    renderFiles(data.files);
+    renderFolderNavigation(
+        data.path,
+        data.parent_path,
+    );
+
+    renderFiles(data.entries);
     showConnectedState(data.count);
 }
+
 
 loginButton.addEventListener("click", async () => {
     if (currentUser) {
@@ -428,6 +597,89 @@ loginForm.addEventListener("submit", async (event) => {
         loginError.hidden = false;
     }
 });
+
+
+backFolderButton.addEventListener(
+    "click",
+    async () => {
+        if (currentParentPath === null) {
+            return;
+        }
+
+        backFolderButton.disabled = true;
+
+        try {
+            await loadFiles(currentParentPath);
+        } catch (error) {
+            filesMessage.textContent = error.message;
+            filesMessage.classList.add("is-error");
+            filesMessage.hidden = false;
+
+            backFolderButton.disabled = false;
+        }
+    },
+);
+
+
+newFolderButton.addEventListener("click", () => {
+    folderForm.reset();
+    folderError.hidden = true;
+    folderDialog.showModal();
+    folderNameInput.focus();
+});
+
+cancelFolderButton.addEventListener(
+    "click",
+    () => {
+        folderDialog.close();
+        folderForm.reset();
+        folderError.hidden = true;
+    },
+);
+
+folderForm.addEventListener(
+    "submit",
+    async (event) => {
+        event.preventDefault();
+
+        const folderName =
+            folderNameInput.value.trim();
+        const submitButton =
+            folderForm.querySelector(
+                'button[type="submit"]',
+            );
+
+        folderError.hidden = true;
+        submitButton.disabled = true;
+
+        try {
+            const createdFolder =
+                await createFolder(
+                    currentPath,
+                    folderName,
+                );
+
+            folderDialog.close();
+            folderForm.reset();
+
+            await loadFiles(currentPath);
+
+            filesMessage.textContent =
+                `Folderul „${createdFolder.name}” a fost creat.`;
+            filesMessage.classList.remove(
+                "is-error",
+            );
+            filesMessage.hidden = false;
+        } catch (error) {
+            folderError.textContent =
+                error.message;
+            folderError.hidden = false;
+        } finally {
+            submitButton.disabled = false;
+        }
+    },
+);
+
 
 fileInput.addEventListener("change", () => {
     const file = fileInput.files[0];
@@ -485,10 +737,13 @@ uploadForm.addEventListener("submit", async (event) => {
 
     try {
         const uploadedFile =
-            await uploadFile(selectedFile);
+            await uploadFile(
+                selectedFile,
+                currentPath,
+);
 
         uploadMessage.textContent =
-            `${uploadedFile.filename} a fost încărcat.`;
+            `${uploadedFile.name} a fost încărcat.`;
         uploadMessage.hidden = false;
 
         clearSelectedFile();
