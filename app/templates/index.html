@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=16"
+    href="{{ url_for('static', filename='css/app.css') }}?v=17"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=16"
+    src="{{ url_for('static', filename='js/app.js') }}?v=17"
     defer
 ></script>
 </head>
@@ -269,6 +269,55 @@
 
             <button type="submit">
                 Creează folderul
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="rename-dialog">
+    <form id="rename-form">
+        <div>
+            <p class="dialog-label">File Vault</p>
+            <h2>Redenumește</h2>
+
+            <p class="dialog-description">
+                Introdu noul nume al fișierului sau folderului.
+            </p>
+        </div>
+
+        <p id="rename-current-name"></p>
+
+        <label for="rename-name-input">
+            Noul nume
+        </label>
+
+        <input
+            id="rename-name-input"
+            name="rename-name"
+            type="text"
+            maxlength="200"
+            autocomplete="off"
+            required
+        >
+
+        <p
+            id="rename-error"
+            class="form-error"
+            role="alert"
+            hidden
+        ></p>
+
+        <div class="dialog-actions">
+            <button
+                id="cancel-rename-button"
+                class="secondary-button"
+                type="button"
+            >
+                Renunță
+            </button>
+
+            <button type="submit">
+                Salvează numele
             </button>
         </div>
     </form>

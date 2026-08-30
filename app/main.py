@@ -807,5 +807,122 @@ def admin_download_file(user_id, relative_path):
             {"error": "Invalid path"}
         ), 400
 
+def rename_vault_entry(user, relative_path):
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify(
+            {"error": "Expected JSON body"}
+        ), 400
+
+    try:
+        new_name = validate_entry_name(
+            payload.get("name", "")
+        )
+        target = resolve_user_path(
+            user,
+            relative_path,
+        )
+    except (ValueError, OSError) as error:
+        return jsonify(
+            {"error": str(error)}
+        ), 400
+
+    user_root = get_user_upload_dir(user).resolve()
+
+    if target == user_root:
+        return jsonify(
+            {"error": "The vault root cannot be renamed"}
+        ), 400
+
+    if not target.exists():
+        return jsonify(
+            {"error": "File or folder not found"}
+        ), 404
+
+    if target.is_dir():
+        entry_type = "folder"
+    elif target.is_file():
+        entry_type = "file"
+    else:
+        return jsonify(
+            {"error": "Unsupported entry type"}
+        ), 400
+
+    old_path = target.relative_to(
+        user_root
+    ).as_posix()
+
+    destination = target.parent / new_name
+
+    if destination == target:
+        return jsonify(
+            {
+                "old_path": old_path,
+                "name": target.name,
+                "path": old_path,
+                "type": entry_type,
+            }
+        )
+
+    if destination.exists():
+        return jsonify(
+            {"error": "A file or folder already has this name"}
+        ), 409
+
+    try:
+        target.rename(destination)
+    except FileNotFoundError:
+        return jsonify(
+            {"error": "File or folder not found"}
+        ), 404
+    except OSError:
+        return jsonify(
+            {"error": "Entry could not be renamed"}
+        ), 500
+
+    new_path = destination.relative_to(
+        user_root
+    ).as_posix()
+
+    return jsonify(
+        {
+            "old_path": old_path,
+            "name": destination.name,
+            "path": new_path,
+            "type": entry_type,
+        }
+    )
+
+
+@app.patch("/api/entries/<path:relative_path>")
+@require_login
+def rename_entry(relative_path):
+    user = get_session_user()
+
+    return rename_vault_entry(
+        user,
+        relative_path,
+    )
+
+
+@app.patch(
+    "/api/admin/vaults/<int:user_id>/entries/"
+    "<path:relative_path>"
+)
+@require_admin
+def admin_rename_entry(user_id, relative_path):
+    target_user = find_user_by_id(user_id)
+
+    if target_user is None:
+        return jsonify(
+            {"error": "User not found"}
+        ), 404
+
+    return rename_vault_entry(
+        target_user,
+        relative_path,
+    )
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)

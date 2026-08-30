@@ -40,6 +40,19 @@ const folderError =
 const cancelFolderButton =
     document.querySelector("#cancel-folder-button");
 
+const renameDialog =
+    document.querySelector("#rename-dialog");
+const renameForm =
+    document.querySelector("#rename-form");
+const renameCurrentName =
+    document.querySelector("#rename-current-name");
+const renameNameInput =
+    document.querySelector("#rename-name-input");
+const renameError =
+    document.querySelector("#rename-error");
+const cancelRenameButton =
+    document.querySelector("#cancel-rename-button");
+
 const uploadForm = document.querySelector("#upload-form");
 const dropZone = document.querySelector("#drop-zone");
 const fileInput = document.querySelector("#file-input");
@@ -70,6 +83,8 @@ let selectedVaultOwner = null;
 const maximumUploadSize = 100 * 1024 * 1024;
 
 let selectedFile = null;
+
+let entryBeingRenamed = null;
 
 function formatBytes(bytes) {
     if (bytes === 0) {
@@ -134,6 +149,47 @@ function getVaultApiBase() {
         );
 
     return `/api/admin/vaults/${encodedUserId}`;
+}
+
+async function renameEntry(relativePath, newName) {
+    const encodedPath =
+        encodeRelativePath(relativePath);
+
+    const response = await fetch(
+        `${getVaultApiBase()}/entries/${encodedPath}`,
+        {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                name: newName,
+            }),
+        },
+    );
+
+    if (!response.ok) {
+        let message =
+            `Redenumirea a eșuat: HTTP ${response.status}`;
+
+        const data = await response
+            .json()
+            .catch(() => null);
+
+        if (data?.error) {
+            message = data.error;
+        } else if (response.status === 409) {
+            message =
+                "Există deja un fișier sau folder cu acest nume.";
+        } else if (response.status === 404) {
+            message =
+                "Fișierul sau folderul nu mai există.";
+        }
+
+        throw new Error(message);
+    }
+
+    return response.json();
 }
 
 async function createFolder(parentPath, folderName) {
@@ -396,7 +452,7 @@ async function openFile(relativePath) {
     }
 
     try {
-        const encodedPath = encodedRelativePath(relativePath);
+        const encodedPath = encodeRelativePath(relativePath);
 
         const response = await fetch(
     `${getVaultApiBase()}/files/${encodedPath}`,
@@ -420,6 +476,38 @@ async function openFile(relativePath) {
         previewWindow.close();
         throw error;
     }
+}
+
+async function downloadFile(relativePath, filename) {
+    const encodedPath =
+        encodeRelativePath(relativePath);
+
+    const response = await fetch(
+        `${getVaultApiBase()}/files/${encodedPath}`,
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            `Fișierul nu poate fi descărcat: HTTP ${response.status}`,
+        );
+    }
+
+    const fileBlob = await response.blob();
+    const fileUrl = URL.createObjectURL(fileBlob);
+    const downloadLink =
+        document.createElement("a");
+
+    downloadLink.href = fileUrl;
+    downloadLink.download = filename;
+    downloadLink.hidden = true;
+
+    document.body.append(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+
+    setTimeout(() => {
+        URL.revokeObjectURL(fileUrl);
+    }, 60_000);
 }
 
 async function deleteFile(relativePath) {
@@ -541,6 +629,74 @@ function renderFiles(entries) {
 
         information.append(name, details);
         actions.append(openButton);
+
+if (entry.type === "file") {
+    const downloadButton =
+        document.createElement("button");
+
+    downloadButton.className =
+        "file-open-button download-button";
+    downloadButton.textContent = "Descarcă";
+    downloadButton.type = "button";
+
+    downloadButton.addEventListener(
+        "click",
+        async () => {
+            downloadButton.disabled = true;
+            downloadButton.textContent =
+                "Se descarcă...";
+
+            try {
+                await downloadFile(
+                    entry.path,
+                    entry.name,
+                );
+            } catch (error) {
+                filesMessage.textContent =
+                    error.message;
+                filesMessage.classList.add(
+                    "is-error",
+                );
+                filesMessage.hidden = false;
+            } finally {
+                downloadButton.disabled = false;
+                downloadButton.textContent =
+                    "Descarcă";
+            }
+        },
+    );
+
+    actions.append(downloadButton);
+}
+
+const renameButton =
+    document.createElement("button");
+
+renameButton.className =
+    "file-open-button rename-button";
+renameButton.textContent = "Redenumește";
+renameButton.type = "button";
+
+renameButton.addEventListener(
+    "click",
+    () => {
+        entryBeingRenamed = entry;
+
+        renameCurrentName.textContent =
+            `Nume actual: ${entry.name}`;
+
+        renameNameInput.value = entry.name;
+
+        renameError.textContent = "";
+        renameError.hidden = true;
+
+        renameDialog.showModal();
+        renameNameInput.focus();
+        renameNameInput.select();
+    },
+);
+
+actions.append(renameButton);
 
         const deleteButton =
     document.createElement("button");
@@ -969,6 +1125,95 @@ folderForm.addEventListener(
     },
 );
 
+
+cancelRenameButton.addEventListener(
+    "click",
+    () => {
+        renameDialog.close();
+    },
+);
+
+
+renameDialog.addEventListener(
+    "close",
+    () => {
+        renameForm.reset();
+        renameCurrentName.textContent = "";
+        renameError.textContent = "";
+        renameError.hidden = true;
+        entryBeingRenamed = null;
+    },
+);
+
+
+renameForm.addEventListener(
+    "submit",
+    async (event) => {
+        event.preventDefault();
+
+        if (entryBeingRenamed === null) {
+            return;
+        }
+
+        const newName =
+            renameNameInput.value.trim();
+
+        if (!newName) {
+            renameError.textContent =
+                "Numele nu poate fi gol.";
+            renameError.hidden = false;
+            return;
+        }
+
+        const entryToRename =
+            entryBeingRenamed;
+
+        const submitButton =
+            renameForm.querySelector(
+                'button[type="submit"]',
+            );
+
+        renameError.hidden = true;
+        submitButton.disabled = true;
+        submitButton.textContent =
+            "Se salvează...";
+
+        let renamedEntry;
+
+        try {
+            renamedEntry = await renameEntry(
+                entryToRename.path,
+                newName,
+            );
+        } catch (error) {
+            renameError.textContent =
+                error.message;
+            renameError.hidden = false;
+            return;
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent =
+                "Salvează numele";
+        }
+
+        renameDialog.close();
+
+        try {
+            await loadFiles(currentPath);
+
+            filesMessage.textContent =
+                `${entryToRename.name} a fost ` +
+                `redenumit în ${renamedEntry.name}.`;
+
+            filesMessage.classList.remove(
+                "is-error",
+            );
+            filesMessage.hidden = false;
+        } catch (error) {
+            showVaultError(error);
+        }
+    },
+);
 
 fileInput.addEventListener("change", () => {
     const file = fileInput.files[0];
