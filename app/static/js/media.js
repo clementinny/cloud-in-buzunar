@@ -1,3 +1,14 @@
+const adminPanel =
+    document.querySelector("#media-admin-panel");
+const personalMediaButton =
+    document.querySelector("#personal-media-button");
+const adminMediaButton =
+    document.querySelector("#admin-media-button");
+const ownerControls =
+    document.querySelector("#media-owner-controls");
+const ownerSelect =
+    document.querySelector("#media-owner-select");
+
 const userStatus =
     document.querySelector("#media-user-status");
 const refreshButton =
@@ -42,7 +53,33 @@ const uploadChunkSize =
 let selectedFile = null;
 let mediaFiles = [];
 let activeFilter = "all";
+let currentUser = null;
+let mediaMode = "personal";
+let selectedOwnerId = null;
+let selectedOwnerName = null;
 
+
+function getOwnerQuery(download = false) {
+    const parameters = new URLSearchParams();
+
+    if (
+        mediaMode === "admin"
+        && selectedOwnerId !== null
+    ) {
+        parameters.set(
+            "owner_id",
+            String(selectedOwnerId),
+        );
+    }
+
+    if (download) {
+        parameters.set("download", "1");
+    }
+
+    const query = parameters.toString();
+
+    return query ? `?${query}` : "";
+}
 
 function formatBytes(bytes) {
     if (bytes === 0) {
@@ -68,13 +105,15 @@ function encodeMediaPath(path) {
         .join("/");
 }
 
-
 function getMediaUrl(path, download = false) {
     const encodedPath = encodeMediaPath(path);
-    const suffix = download ? "?download=1" : "";
 
-    return `/api/media/${encodedPath}${suffix}`;
+    return (
+        `/api/media/${encodedPath}` +
+        getOwnerQuery(download)
+    );
 }
+
 
 
 function clearSelectedFile() {
@@ -278,7 +317,9 @@ async function loadMedia() {
     refreshButton.disabled = true;
 
     try {
-        const response = await fetch("/api/media");
+        const response = await fetch(
+            `/api/media${getOwnerQuery()}`,
+);
 
         if (response.status === 401) {
             throw new Error(
@@ -330,7 +371,7 @@ async function initializeUpload(file) {
         `${file.name}:${file.size}:${file.lastModified}`;
 
     const response = await fetch(
-        "/api/media/uploads",
+        `/api/media/uploads${getOwnerQuery()}`,
         {
             method: "POST",
             headers: {
@@ -354,7 +395,8 @@ async function sendUploadChunk(
     offset,
 ) {
     const response = await fetch(
-        `/api/media/uploads/${uploadId}`,
+        `/api/media/uploads/${uploadId}` +
+            getOwnerQuery(),
         {
             method: "PUT",
             headers: {
@@ -370,10 +412,64 @@ async function sendUploadChunk(
     return readJsonResponse(response);
 }
 
+function updateMediaStatus() {
+    if (
+        mediaMode === "admin"
+        && selectedOwnerName
+    ) {
+        userStatus.textContent =
+            `Administrezi biblioteca lui ` +
+            `${selectedOwnerName}`;
+        return;
+    }
+
+    userStatus.textContent =
+        `${currentUser.username} · ${
+            currentUser.role === "admin"
+                ? "administrator"
+                : "utilizator"
+        }`;
+}
+
+
+async function loadMediaOwners() {
+    const response = await fetch(
+        "/api/admin/vaults"
+    );
+
+    const data = await readJsonResponse(response);
+
+    ownerSelect.replaceChildren();
+
+    for (const vault of data.vaults) {
+        const option = document.createElement(
+            "option"
+        );
+
+        option.value = String(vault.user.id);
+        option.textContent = vault.user.username;
+
+        ownerSelect.append(option);
+    }
+
+    if (data.vaults.length === 0) {
+        selectedOwnerId = null;
+        selectedOwnerName = null;
+        return;
+    }
+
+    const firstOwner = data.vaults[0].user;
+
+    selectedOwnerId = firstOwner.id;
+    selectedOwnerName = firstOwner.username;
+    ownerSelect.value = String(firstOwner.id);
+}
+
 
 async function completeUpload(uploadId) {
     const response = await fetch(
-        `/api/media/uploads/${uploadId}/complete`,
+        `/api/media/uploads/${uploadId}/complete` +
+            getOwnerQuery(),
         {
             method: "POST",
         },
@@ -444,13 +540,13 @@ async function initializeMediaPage() {
 
         const data = await response.json();
         const user = data.user;
+        currentUser = user;
 
-        userStatus.textContent =
-            `${user.username} · ${
-                user.role === "admin"
-                    ? "administrator"
-                    : "utilizator"
-            }`;
+        if (currentUser.role === "admin") {
+            adminPanel.hidden = false;
+            await loadMediaOwners();
+}
+        updateMediaStatus();
 
         uploadForm.hidden = false;
         refreshButton.disabled = false;
@@ -580,5 +676,63 @@ refreshButton.addEventListener("click", () => {
     });
 });
 
+personalMediaButton.addEventListener(
+    "click",
+    async () => {
+        mediaMode = "personal";
+
+        personalMediaButton.classList.add(
+            "is-active"
+        );
+        adminMediaButton.classList.remove(
+            "is-active"
+        );
+
+        ownerControls.hidden = true;
+        activeFilter = "all";
+
+        updateMediaStatus();
+        await loadMedia();
+    },
+);
+
+
+adminMediaButton.addEventListener(
+    "click",
+    async () => {
+        mediaMode = "admin";
+
+        adminMediaButton.classList.add(
+            "is-active"
+        );
+        personalMediaButton.classList.remove(
+            "is-active"
+        );
+
+        ownerControls.hidden = false;
+        activeFilter = "all";
+
+        updateMediaStatus();
+        await loadMedia();
+    },
+);
+
+
+ownerSelect.addEventListener(
+    "change",
+    async () => {
+        selectedOwnerId = Number(
+            ownerSelect.value
+        );
+
+        selectedOwnerName =
+            ownerSelect.options[
+                ownerSelect.selectedIndex
+            ]?.textContent ?? "";
+
+        updateMediaStatus();
+        await loadMedia();
+    },
+);
 
 initializeMediaPage();

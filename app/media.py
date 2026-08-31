@@ -1,3 +1,4 @@
+import time
 import json
 import secrets
 import shutil
@@ -26,6 +27,8 @@ MAX_MEDIA_UPLOAD_SIZE = 100 * 1024 * 1024
 MAX_MEDIA_FILE_SIZE = 50 * 1024 * 1024 * 1024
 MAX_MEDIA_CHUNK_SIZE = 20 * 1024 * 1024
 MINIMUM_FREE_SPACE = 512 * 1024 * 1024
+STALE_UPLOAD_SECONDS = 7 * 24 * 60 * 60
+
 
 MEDIA_UPLOAD_TEMP_DIR = MEDIA_DIR / ".uploads"
 MEDIA_UPLOAD_TEMP_DIR.mkdir(
@@ -54,6 +57,54 @@ def get_session_user():
         return None
 
     return user
+
+class MediaOwnerError(Exception):
+    def __init__(self, message, status_code):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+@media_blueprint.errorhandler(MediaOwnerError)
+def handle_media_owner_error(error):
+    return jsonify(
+        {"error": error.message}
+    ), error.status_code
+
+
+def get_requested_media_user():
+    current_user = get_session_user()
+    requested_owner_id = request.args.get("owner_id")
+
+    if not requested_owner_id:
+        return current_user
+
+    if (
+        current_user is None
+        or current_user["role"] != "admin"
+    ):
+        raise MediaOwnerError(
+            "Administrator access required",
+            403,
+        )
+
+    try:
+        owner_id = int(requested_owner_id)
+    except ValueError as error:
+        raise MediaOwnerError(
+            "Invalid owner ID",
+            400,
+        ) from error
+
+    requested_user = find_user_by_id(owner_id)
+
+    if requested_user is None:
+        raise MediaOwnerError(
+            "User not found",
+            404,
+        )
+
+    return requested_user
 
 
 def require_media_login(view_function):
@@ -135,6 +186,50 @@ def get_user_upload_temp_dir(user):
     )
 
     return temporary_directory
+
+def cleanup_stale_uploads(user):
+    temporary_directory = get_user_upload_temp_dir(
+        user
+    )
+    cutoff_time = time.time() - STALE_UPLOAD_SECONDS
+
+    upload_ids = {
+        path.stem
+        for path in temporary_directory.iterdir()
+        if path.suffix in {".part", ".json"}
+    }
+
+    with MEDIA_UPLOAD_LOCK:
+        for upload_id in upload_ids:
+            part_path = temporary_directory / (
+                f"{upload_id}.part"
+            )
+            metadata_path = temporary_directory / (
+                f"{upload_id}.json"
+            )
+
+            existing_paths = [
+                path
+                for path in (
+                    part_path,
+                    metadata_path,
+                )
+                if path.exists()
+            ]
+
+            if not existing_paths:
+                continue
+
+            latest_activity = max(
+                path.stat().st_mtime
+                for path in existing_paths
+            )
+
+            if latest_activity >= cutoff_time:
+                continue
+
+            part_path.unlink(missing_ok=True)
+            metadata_path.unlink(missing_ok=True)
 
 
 def get_upload_paths(user, upload_id):
@@ -233,6 +328,7 @@ def serialize_media_file(path, user_root):
 @media_blueprint.post("/api/media/uploads")
 @require_media_login
 def initialize_large_media_upload():
+    cleanup_stale_uploads(user)
     user = get_session_user()
     payload = request.get_json(silent=True)
 
@@ -415,7 +511,7 @@ def initialize_large_media_upload():
 )
 @require_media_login
 def upload_media_chunk(upload_id):
-    user = get_session_user()
+    user = get_requested_media_user()
 
     try:
         expected_offset = int(

@@ -15,12 +15,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/media.css') }}?v=2"
+        href="{{ url_for('static', filename='css/media.css') }}?v=3"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/media.js') }}?v=2"
+        src="{{ url_for('static', filename='js/media.js') }}?v=3"
     ></script>
 </head>
 
@@ -55,6 +55,43 @@
                 Reîncarcă
             </button>
         </section>
+
+<section
+    id="media-admin-panel"
+    class="media-admin-panel"
+    hidden
+>
+    <div class="media-mode-switch">
+        <button
+            id="personal-media-button"
+            class="is-active"
+            type="button"
+        >
+            Biblioteca mea
+        </button>
+
+        <button
+            id="admin-media-button"
+            type="button"
+        >
+            Administrare media
+        </button>
+    </div>
+
+    <div
+        id="media-owner-controls"
+        class="media-owner-controls"
+        hidden
+    >
+        <label for="media-owner-select">
+            Biblioteca utilizatorului
+        </label>
+
+        <select id="media-owner-select"></select>
+
+        <span>Mod administrativ complet</span>
+    </div>
+</section>
 
         <form
             id="media-upload-form"
