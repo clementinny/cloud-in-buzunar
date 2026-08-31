@@ -15,12 +15,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/downloads.css') }}?v=1"
+        href="{{ url_for('static', filename='css/downloads.css') }}?v=2"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/downloads.js') }}?v=1"
+        src="{{ url_for('static', filename='js/downloads.js') }}?v=3"
     ></script>
 </head>
 
@@ -110,6 +110,31 @@
                     </select>
                 </label>
             </div>
+
+<div class="torrent-upload">
+    <div>
+        <strong>Sau încarcă un fișier .torrent</strong>
+
+        <p>
+            Serverul va descărca automat conținutul
+            torrentului.
+        </p>
+    </div>
+
+    <input
+        id="torrent-file-input"
+        type="file"
+        accept=".torrent,application/x-bittorrent"
+    >
+
+    <button
+        id="start-torrent-button"
+        class="secondary-button"
+        type="button"
+    >
+        Pornește torrentul
+    </button>
+</div>
 
             <div class="new-download-actions">
                 <p

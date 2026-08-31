@@ -1,3 +1,12 @@
+const torrentFileInput =
+    document.querySelector(
+        "#torrent-file-input"
+    );
+const startTorrentButton =
+    document.querySelector(
+        "#start-torrent-button"
+    );
+
 const serviceStatus =
     document.querySelector(
         "#downloads-service-status"
@@ -68,6 +77,8 @@ function getStatusLabel(status) {
         active: "Se descarcă",
         waiting: "În așteptare",
         paused: "Pauză",
+        checking: "Se verifică",
+        seeding: "Se oferă la seed",
         complete: "Finalizat",
         error: "Eroare",
         removed: "Eliminat",
@@ -119,14 +130,19 @@ async function loadOwners() {
 
 
 async function runDownloadAction(
-    gid,
+    download,
     action,
     method = "POST",
 ) {
     const suffix = action ? `/${action}` : "";
+    const encodedId = encodeURIComponent(download.gid);
+    const enginePrefix =
+        download.engine === "transmission"
+            ? "/transmission"
+            : "";
 
     const response = await fetch(
-        `/api/downloads/${gid}${suffix}`,
+        `/api/downloads${enginePrefix}/${encodedId}${suffix}`,
         {
             method,
         },
@@ -235,10 +251,15 @@ function renderDownloads(downloads) {
                 ? formatBytes(download.total_bytes)
                 : "dimensiune necunoscută";
 
+        const engineLabel =
+            download.engine === "transmission"
+                ? "Transmission"
+                : "aria2";
+
         details.textContent =
             `${formatBytes(
                 download.completed_bytes
-            )} din ${totalLabel}`;
+            )} din ${totalLabel} · ${engineLabel}`;
 
         progress.max = 100;
         progress.value = download.progress;
@@ -249,22 +270,30 @@ function renderDownloads(downloads) {
 
         percentage.textContent =
             `${download.progress.toFixed(1)}%`;
-        speed.textContent = formatSpeed(
-            download.download_speed
-        );
+        const displayedSpeed =
+            download.status === "seeding"
+                ? download.upload_speed
+                : download.download_speed;
+
+        speed.textContent =
+            download.status === "seeding"
+                ? `↑ ${formatSpeed(displayedSpeed)}`
+                : formatSpeed(displayedSpeed);
 
         progressLabel.append(percentage, speed);
 
         if (
             download.status === "active"
             || download.status === "waiting"
+            || download.status === "checking"
+            || download.status === "seeding"
         ) {
             actions.append(
                 createActionButton(
                     "Pauză",
                     "secondary-button",
                     () => runDownloadAction(
-                        download.gid,
+                        download,
                         "pause",
                     ),
                 ),
@@ -277,7 +306,7 @@ function renderDownloads(downloads) {
                     "Continuă",
                     "secondary-button",
                     () => runDownloadAction(
-                        download.gid,
+                        download,
                         "resume",
                     ),
                 ),
@@ -289,7 +318,7 @@ function renderDownloads(downloads) {
                 "Elimină",
                 "delete-button",
                 () => runDownloadAction(
-                    download.gid,
+                    download,
                     "",
                     "DELETE",
                 ),
@@ -341,14 +370,23 @@ async function loadDownloads() {
         );
         const data = await readJsonResponse(response);
 
+        const connectedServices = Object.entries(
+            data.services ?? {}
+        )
+            .filter(([, status]) =>
+                status === "connected"
+            )
+            .map(([name]) => name);
+
         serviceStatus.textContent =
-            "aria2 conectat · actualizare automată";
+            `${connectedServices.join(" + ")} ` +
+            "conectate · actualizare automată";
         refreshButton.disabled = false;
 
         renderDownloads(data.downloads);
     } catch (error) {
         serviceStatus.textContent =
-            "Serviciul aria2 nu este disponibil";
+            "Serviciile de download nu sunt disponibile";
 
         downloadsMessage.textContent =
             error.message;
@@ -428,6 +466,86 @@ document.addEventListener(
     () => {
         if (!document.hidden) {
             loadDownloads();
+        }
+    },
+);
+
+startTorrentButton.addEventListener(
+    "click",
+    async () => {
+        const torrentFile =
+            torrentFileInput.files[0];
+
+        if (!torrentFile) {
+            newDownloadMessage.textContent =
+                "Selectează un fișier .torrent.";
+            newDownloadMessage.classList.add(
+                "is-error"
+            );
+            newDownloadMessage.hidden = false;
+            return;
+        }
+
+        if (
+            !torrentFile.name
+                .toLowerCase()
+                .endsWith(".torrent")
+        ) {
+            newDownloadMessage.textContent =
+                "Fișierul trebuie să aibă extensia .torrent.";
+            newDownloadMessage.classList.add(
+                "is-error"
+            );
+            newDownloadMessage.hidden = false;
+            return;
+        }
+
+        startTorrentButton.disabled = true;
+        newDownloadMessage.hidden = true;
+
+        const formData = new FormData();
+
+        formData.append("file", torrentFile);
+        formData.append(
+            "owner_id",
+            ownerSelect.value,
+        );
+        formData.append(
+            "destination",
+            destinationSelect.value,
+        );
+
+        try {
+            const response = await fetch(
+                "/api/downloads/torrent",
+                {
+                    method: "POST",
+                    body: formData,
+                },
+            );
+
+            const data =
+                await readJsonResponse(response);
+
+            torrentFileInput.value = "";
+
+            newDownloadMessage.textContent =
+                `Torrent pornit: ${data.torrent}`;
+            newDownloadMessage.classList.remove(
+                "is-error"
+            );
+            newDownloadMessage.hidden = false;
+
+            await loadDownloads();
+        } catch (error) {
+            newDownloadMessage.textContent =
+                error.message;
+            newDownloadMessage.classList.add(
+                "is-error"
+            );
+            newDownloadMessage.hidden = false;
+        } finally {
+            startTorrentButton.disabled = false;
         }
     },
 );
