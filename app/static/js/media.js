@@ -35,8 +35,10 @@ const mediaMessage =
 const mediaGrid =
     document.querySelector("#media-grid");
 
-const maximumUploadSize = 100 * 1024 * 1024;
-
+const maximumUploadSize =
+    50 * 1024 * 1024 * 1024;
+const uploadChunkSize =
+    16 * 1024 * 1024;
 let selectedFile = null;
 let mediaFiles = [];
 let activeFilter = "all";
@@ -90,7 +92,7 @@ function selectFile(file) {
         clearSelectedFile();
 
         uploadMessage.textContent =
-            "Fișierul depășește limita de 100 MB.";
+            "Fișierul depășește limita de 50 GB.";
         uploadMessage.classList.add("is-error");
         uploadMessage.hidden = false;
         return;
@@ -300,66 +302,135 @@ async function loadMedia() {
 }
 
 
-function uploadMedia(file) {
-    return new Promise((resolve, reject) => {
-        const formData = new FormData();
-        const request = new XMLHttpRequest();
 
-        formData.append("file", file);
 
-        request.open("POST", "/api/media");
 
-        request.upload.addEventListener(
-            "progress",
-            (event) => {
-                if (!event.lengthComputable) {
-                    return;
-                }
+async function readJsonResponse(response) {
+    let data = null;
 
-                const percent = Math.round(
-                    (event.loaded / event.total) * 100,
-                );
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
 
-                uploadProgress.value = percent;
-                uploadPercent.textContent =
-                    `${percent}%`;
-            },
+    if (!response.ok) {
+        throw new Error(
+            data?.error ??
+            `Cererea a eșuat: HTTP ${response.status}`,
         );
+    }
 
-        request.addEventListener("load", () => {
-            let data = null;
-
-            try {
-                data = JSON.parse(request.responseText);
-            } catch (error) {
-                data = null;
-            }
-
-            if (request.status === 201) {
-                resolve(data);
-                return;
-            }
-
-            reject(
-                new Error(
-                    data?.error ??
-                    `Upload eșuat: HTTP ${request.status}`,
-                ),
-            );
-        });
-
-        request.addEventListener("error", () => {
-            reject(
-                new Error(
-                    "Conexiunea cu serverul a eșuat.",
-                ),
-            );
-        });
-
-        request.send(formData);
-    });
+    return data;
 }
 
+
+async function initializeUpload(file) {
+    const fingerprint =
+        `${file.name}:${file.size}:${file.lastModified}`;
+
+    const response = await fetch(
+        "/api/media/uploads",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                filename: file.name,
+                size: file.size,
+                fingerprint,
+            }),
+        },
+    );
+
+    return readJsonResponse(response);
+}
+
+
+async function sendUploadChunk(
+    uploadId,
+    chunk,
+    offset,
+) {
+    const response = await fetch(
+        `/api/media/uploads/${uploadId}`,
+        {
+            method: "PUT",
+            headers: {
+                "Content-Type":
+                    "application/octet-stream",
+                "X-Upload-Offset":
+                    String(offset),
+            },
+            body: chunk,
+        },
+    );
+
+    return readJsonResponse(response);
+}
+
+
+async function completeUpload(uploadId) {
+    const response = await fetch(
+        `/api/media/uploads/${uploadId}/complete`,
+        {
+            method: "POST",
+        },
+    );
+
+    return readJsonResponse(response);
+}
+
+
+async function uploadMedia(file) {
+    const upload = await initializeUpload(file);
+
+    let offset = upload.received_bytes;
+
+    uploadProgress.value = Math.round(
+        (offset / file.size) * 100,
+    );
+    uploadPercent.textContent =
+        `${uploadProgress.value}%`;
+
+    if (upload.resumed && offset > 0) {
+        uploadMessage.textContent =
+            `Upload reluat de la ${formatBytes(offset)}.`;
+        uploadMessage.classList.remove("is-error");
+        uploadMessage.hidden = false;
+    }
+
+    while (offset < file.size) {
+        const nextOffset = Math.min(
+            offset + uploadChunkSize,
+            file.size,
+        );
+
+        const chunk = file.slice(
+            offset,
+            nextOffset,
+        );
+
+        const result = await sendUploadChunk(
+            upload.upload_id,
+            chunk,
+            offset,
+        );
+
+        offset = result.received_bytes;
+
+        const percent = Math.round(
+            (offset / file.size) * 100,
+        );
+
+        uploadProgress.value = percent;
+        uploadPercent.textContent =
+            `${percent}%`;
+    }
+
+    return completeUpload(upload.upload_id);
+}
 
 async function initializeMediaPage() {
     try {
@@ -444,6 +515,8 @@ uploadForm.addEventListener(
         }
 
         uploadButton.disabled = true;
+        clearButton.disabled = true;
+        fileInput.disabled = true;
         progressWrapper.hidden = false;
         uploadProgress.value = 0;
         uploadPercent.textContent = "0%";
@@ -466,6 +539,8 @@ uploadForm.addEventListener(
             uploadMessage.hidden = false;
         } finally {
             uploadButton.disabled = false;
+            clearButton.disabled = false;
+            fileInput.disabled = false;
             progressWrapper.hidden = true;
         }
     },
