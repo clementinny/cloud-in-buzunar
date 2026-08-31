@@ -24,6 +24,8 @@ from app.database import (
     list_users,
 )
 
+from app.media import media_blueprint
+
 app = Flask(__name__)
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -62,6 +64,7 @@ app.config.update(
 
 app.config["UPLOAD_DIR"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+app.register_blueprint(media_blueprint)
 
 def calculate_sha256(path: Path) -> str:
     digest = hashlib.sha256()

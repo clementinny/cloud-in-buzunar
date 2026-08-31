@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Media · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=media-1"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/media.css') }}?v=1"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/media.js') }}?v=1"
+    ></script>
+</head>
+
+<body class="media-page">
+    <header class="media-header">
+        <a class="back-link" href="/">
+            ← Dashboard
+        </a>
+
+        <p class="service-label">CloudInBuzunar · Media</p>
+        <h1>Biblioteca mea</h1>
+
+        <p>
+            Fotografii, muzică și filme direct de pe server.
+        </p>
+    </header>
+
+    <main class="media-main">
+        <section class="media-status-panel">
+            <div>
+                <h2>Media</h2>
+                <p id="media-user-status">
+                    Se verifică sesiunea...
+                </p>
+            </div>
+
+            <button
+                id="refresh-media-button"
+                type="button"
+                disabled
+            >
+                Reîncarcă
+            </button>
+        </section>
+
+        <form
+            id="media-upload-form"
+            class="media-upload-panel"
+            hidden
+        >
+            <label
+                id="media-drop-zone"
+                class="media-drop-zone"
+                for="media-file-input"
+            >
+                <input
+                    id="media-file-input"
+                    type="file"
+                    accept="image/*,audio/*,video/*"
+                    hidden
+                >
+
+                <span class="media-upload-icon">↑</span>
+                <strong>Alege sau trage un fișier media aici</strong>
+                <span>Fotografie, muzică sau video · Maximum 100 MB</span>
+            </label>
+
+            <div id="media-upload-details" hidden>
+                <div>
+                    <strong id="media-selected-name"></strong>
+                    <span id="media-selected-size"></span>
+                </div>
+
+                <div class="media-upload-actions">
+                    <button
+                        id="clear-media-button"
+                        class="secondary-button"
+                        type="button"
+                    >
+                        Renunță
+                    </button>
+
+                    <button
+                        id="upload-media-button"
+                        type="submit"
+                    >
+                        Încarcă
+                    </button>
+                </div>
+            </div>
+
+            <div id="media-progress-wrapper" hidden>
+                <div class="media-progress-label">
+                    <span>Se încarcă...</span>
+                    <span id="media-upload-percent">0%</span>
+                </div>
+
+                <progress
+                    id="media-upload-progress"
+                    max="100"
+                    value="0"
+                ></progress>
+            </div>
+
+            <p id="media-upload-message" hidden></p>
+        </form>
+
+        <section class="media-library">
+            <div class="media-library-toolbar">
+                <div>
+                    <h2>Bibliotecă</h2>
+                    <p id="media-count">0 elemente</p>
+                </div>
+
+                <div
+                    id="media-filters"
+                    class="media-filters"
+                    hidden
+                >
+                    <button
+                        class="media-filter is-active"
+                        data-filter="all"
+                        type="button"
+                    >
+                        Toate
+                    </button>
+
+                    <button
+                        class="media-filter"
+                        data-filter="image"
+                        type="button"
+                    >
+                        Fotografii
+                    </button>
+
+                    <button
+                        class="media-filter"
+                        data-filter="audio"
+                        type="button"
+                    >
+                        Muzică
+                    </button>
+
+                    <button
+                        class="media-filter"
+                        data-filter="video"
+                        type="button"
+                    >
+                        Filme
+                    </button>
+                </div>
+            </div>
+
+            <p id="media-message">
+                Conectează-te din dashboard pentru a vedea biblioteca.
+            </p>
+
+            <div
+                id="media-grid"
+                class="media-grid"
+            ></div>
+        </section>
+    </main>
+</body>
+</html>
