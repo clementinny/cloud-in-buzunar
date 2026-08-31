@@ -1,0 +1,191 @@
+.downloads-header,
+.downloads-main {
+    width: min(1080px, calc(100% - 32px));
+    margin-inline: auto;
+}
+
+.downloads-header {
+    padding-top: 38px;
+}
+
+.downloads-main {
+    display: grid;
+    gap: 20px;
+    padding-bottom: 60px;
+}
+
+.downloads-label {
+    color: #a78bfa;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.downloads-status-panel,
+.new-download-panel,
+.downloads-list-panel {
+    padding: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 22px;
+    background: rgba(15, 23, 42, 0.82);
+}
+
+.downloads-status-panel,
+.downloads-list-toolbar,
+.new-download-actions,
+.download-card-header,
+.download-progress-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.downloads-status-panel h2,
+.downloads-status-panel p,
+.downloads-list-toolbar h2,
+.downloads-list-toolbar p {
+    margin: 0;
+}
+
+.downloads-status-panel p,
+.downloads-list-toolbar p {
+    margin-top: 6px;
+    color: #94a3b8;
+}
+
+.new-download-panel {
+    display: grid;
+    gap: 16px;
+}
+
+.new-download-panel textarea,
+.new-download-panel select {
+    width: 100%;
+    padding: 12px;
+    color: white;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 12px;
+    background: #0f172a;
+}
+
+.new-download-panel textarea {
+    resize: vertical;
+}
+
+.download-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.download-options label {
+    display: grid;
+    gap: 8px;
+}
+
+#new-download-message.is-error,
+#downloads-message.is-error,
+.download-error {
+    color: #fca5a5;
+}
+
+.downloads-list-panel {
+    display: grid;
+    gap: 20px;
+}
+
+#downloads-list {
+    display: grid;
+    gap: 14px;
+}
+
+.download-card {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.7);
+}
+
+.download-information {
+    min-width: 0;
+}
+
+.download-information h3 {
+    overflow: hidden;
+    margin: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.download-information p {
+    margin: 6px 0 0;
+    color: #94a3b8;
+}
+
+.download-status {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    color: #cbd5e1;
+    background: rgba(71, 85, 105, 0.35);
+}
+
+.status-active {
+    color: #67e8f9;
+    background: rgba(8, 145, 178, 0.2);
+}
+
+.status-complete {
+    color: #86efac;
+    background: rgba(22, 163, 74, 0.2);
+}
+
+.status-error {
+    color: #fca5a5;
+    background: rgba(220, 38, 38, 0.2);
+}
+
+.status-paused {
+    color: #fde68a;
+    background: rgba(202, 138, 4, 0.2);
+}
+
+.download-card progress {
+    width: 100%;
+}
+
+.download-progress-label {
+    color: #94a3b8;
+    font-size: 0.9rem;
+}
+
+.download-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+@media (max-width: 620px) {
+    .downloads-status-panel,
+    .downloads-list-toolbar,
+    .new-download-actions,
+    .download-card-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .download-options {
+        grid-template-columns: 1fr;
+    }
+
+    .download-status {
+        align-self: flex-start;
+    }
+
+    .download-card-actions button {
+        flex: 1;
+    }
+}

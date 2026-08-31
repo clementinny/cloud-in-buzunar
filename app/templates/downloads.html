@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Download Manager · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=downloads-1"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/downloads.css') }}?v=1"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/downloads.js') }}?v=1"
+    ></script>
+</head>
+
+<body class="downloads-page">
+    <header class="downloads-header">
+        <a class="back-link" href="/">
+            ← Dashboard
+        </a>
+
+        <p class="downloads-label">
+            CloudInBuzunar · aria2
+        </p>
+
+        <h1>Download Manager</h1>
+
+        <p>
+            Trimite un link, iar serverul descarcă fișierul
+            în fundal.
+        </p>
+    </header>
+
+    <main class="downloads-main">
+        <section class="downloads-status-panel">
+            <div>
+                <h2>Serviciu</h2>
+                <p id="downloads-service-status">
+                    Se verifică...
+                </p>
+            </div>
+
+            <button
+                id="refresh-downloads-button"
+                type="button"
+                disabled
+            >
+                Reîncarcă
+            </button>
+        </section>
+
+        <form
+            id="new-download-form"
+            class="new-download-panel"
+            hidden
+        >
+            <div>
+                <h2>Download nou</h2>
+                <p>
+                    Sunt acceptate linkuri HTTP, HTTPS și magnet.
+                </p>
+            </div>
+
+            <label for="download-url-input">
+                Linkul fișierului
+            </label>
+
+            <textarea
+                id="download-url-input"
+                rows="4"
+                placeholder="https://... sau magnet:?xt=..."
+                required
+            ></textarea>
+
+            <div class="download-options">
+                <label>
+                    Utilizator
+
+                    <select
+                        id="download-owner-select"
+                        required
+                    ></select>
+                </label>
+
+                <label>
+                    Destinație
+
+                    <select
+                        id="download-destination-select"
+                        required
+                    >
+                        <option value="media">
+                            Biblioteca Media
+                        </option>
+
+                        <option value="files">
+                            File Vault
+                        </option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="new-download-actions">
+                <p
+                    id="new-download-message"
+                    hidden
+                ></p>
+
+                <button
+                    id="start-download-button"
+                    type="submit"
+                >
+                    Pornește downloadul
+                </button>
+            </div>
+        </form>
+
+        <section class="downloads-list-panel">
+            <div class="downloads-list-toolbar">
+                <div>
+                    <h2>Descărcări</h2>
+                    <p id="downloads-count">
+                        0 descărcări
+                    </p>
+                </div>
+
+                <span id="downloads-total-speed">
+                    0 B/s
+                </span>
+            </div>
+
+            <p id="downloads-message">
+                Nu există descărcări.
+            </p>
+
+            <div id="downloads-list"></div>
+        </section>
+    </main>
+</body>
+</html>

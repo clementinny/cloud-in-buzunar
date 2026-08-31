@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
-
+from app.downloads import downloads_blueprint
 from flask import (
     Flask,
     jsonify,
@@ -25,6 +25,7 @@ from app.database import (
 )
 
 from app.media import media_blueprint
+
 
 app = Flask(__name__)
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
@@ -65,6 +66,7 @@ app.config.update(
 app.config["UPLOAD_DIR"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 app.register_blueprint(media_blueprint)
+app.register_blueprint(downloads_blueprint)
 
 def calculate_sha256(path: Path) -> str:
     digest = hashlib.sha256()
