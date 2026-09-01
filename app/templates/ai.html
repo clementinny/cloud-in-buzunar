@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>AI local · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=ai-1"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/ai.css') }}?v=2"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/ai.js') }}?v=2"
+    ></script>
+</head>
+
+<body class="ai-page">
+    <header class="ai-header">
+        <a class="ai-back-link" href="/">
+            ← Dashboard
+        </a>
+
+        <p class="ai-label">CloudInBuzunar · AI local</p>
+        <h1>Conversație cu Qwen</h1>
+        <p>
+            Mesajele sunt procesate local pe telefonul tău.
+        </p>
+    </header>
+
+    <main class="ai-main">
+        <section class="ai-status-panel">
+            <div>
+                <h2>Model</h2>
+                <p id="ai-status">Se verifică...</p>
+            </div>
+
+            <div
+                id="ai-model-controls"
+                class="ai-model-controls"
+                hidden
+            >
+                <label for="ai-model-select">
+                    Mod AI
+                </label>
+
+                <div class="ai-model-row">
+                    <select id="ai-model-select"></select>
+                    <button
+                        id="ai-model-switch-button"
+                        class="secondary-button"
+                        type="button"
+                    >
+                        Activează
+                    </button>
+                </div>
+
+                <p
+                    id="ai-model-message"
+                    class="ai-model-message"
+                    hidden
+                ></p>
+            </div>
+
+            <button
+                id="clear-chat-button"
+                class="secondary-button"
+                type="button"
+            >
+                Șterge conversația
+            </button>
+        </section>
+
+        <section
+            class="ai-chat-panel"
+            aria-labelledby="chat-title"
+        >
+            <div class="ai-chat-heading">
+                <div>
+                    <h2 id="chat-title">Chat</h2>
+                    <p id="ai-user-status">Se verifică sesiunea...</p>
+                </div>
+
+                <p id="ai-generation-status" hidden></p>
+            </div>
+
+            <div
+                id="ai-messages"
+                class="ai-messages"
+                aria-live="polite"
+            ></div>
+
+            <p
+                id="ai-error"
+                class="ai-error"
+                role="alert"
+                hidden
+            ></p>
+
+            <form id="ai-form" class="ai-form" hidden>
+                <label for="ai-prompt-input">
+                    Mesajul tău
+                </label>
+
+                <textarea
+                    id="ai-prompt-input"
+                    rows="4"
+                    maxlength="2000"
+                    placeholder="Scrie o întrebare..."
+                    required
+                ></textarea>
+
+                <div class="ai-form-footer">
+                    <p>
+                        Istoricul este păstrat numai în acest browser.
+                    </p>
+
+                    <button id="ai-send-button" type="submit">
+                        Trimite
+                    </button>
+                </div>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

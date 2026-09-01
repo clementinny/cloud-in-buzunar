@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from app.downloads import downloads_blueprint
+from app.ai import ai_blueprint
 from flask import (
     Flask,
     jsonify,
@@ -67,6 +68,7 @@ app.config["UPLOAD_DIR"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 app.register_blueprint(media_blueprint)
 app.register_blueprint(downloads_blueprint)
+app.register_blueprint(ai_blueprint)
 
 def calculate_sha256(path: Path) -> str:
     digest = hashlib.sha256()
