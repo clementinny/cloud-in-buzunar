@@ -38,11 +38,33 @@ ON login_attempts (
 )
 """
 
+AI_MESSAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ai_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL
+        CHECK (role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+)
+"""
+AI_MESSAGE_INDEX = """
+CREATE INDEX IF NOT EXISTS ai_messages_user_history
+ON ai_messages (
+    user_id,
+    id
+)
+"""
+
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
 
     return connection
 
@@ -54,6 +76,8 @@ def initialize_database():
         connection.execute(USER_SCHEMA)
         connection.execute(LOGIN_ATTEMPT_SCHEMA)
         connection.execute(LOGIN_ATTEMPT_INDEX)
+        connection.execute(AI_MESSAGE_SCHEMA)
+        connection.execute(AI_MESSAGE_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -318,5 +342,116 @@ def count_recent_failed_login_attempts(
         ).fetchone()
 
         return result["failed_count"]
+    finally:
+        connection.close()
+
+
+def list_ai_messages(user_id, limit=100):
+    connection = open_database()
+
+    try:
+        if limit is None:
+            return connection.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    role,
+                    content,
+                    created_at
+                FROM ai_messages
+                WHERE user_id = ?
+                ORDER BY id
+                """,
+                (user_id,),
+            ).fetchall()
+
+        safe_limit = max(1, min(int(limit), 500))
+
+        return connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                role,
+                content,
+                created_at
+            FROM (
+                SELECT
+                    id,
+                    user_id,
+                    role,
+                    content,
+                    created_at
+                FROM ai_messages
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id
+            """,
+            (
+                user_id,
+                safe_limit,
+            ),
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def append_ai_message(user_id, role, content):
+    if role not in {"user", "assistant"}:
+        raise ValueError("Invalid AI message role")
+
+    if not isinstance(content, str):
+        raise ValueError("AI message content must be text")
+
+    normalized_content = content.strip()
+
+    if not normalized_content:
+        raise ValueError("AI message cannot be empty")
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            INSERT INTO ai_messages (
+                user_id,
+                role,
+                content,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                role,
+                normalized_content,
+                created_at,
+            ),
+        )
+        connection.commit()
+
+        return cursor.lastrowid
+    finally:
+        connection.close()
+
+
+def clear_ai_messages(user_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            DELETE FROM ai_messages
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        connection.commit()
+
+        return cursor.rowcount
     finally:
         connection.close()

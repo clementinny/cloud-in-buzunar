@@ -48,40 +48,21 @@ async function readJsonResponse(response) {
 }
 
 
-function getStorageKey() {
-    return `cloud-in-buzunar-ai-${currentUser.id}`;
-}
+async function loadServerMessages() {
+    const response = await fetch("/api/ai/history");
+    const data = await readJsonResponse(response);
 
-
-function loadStoredMessages() {
-    try {
-        const storedValue = localStorage.getItem(
-            getStorageKey()
-        );
-        const parsedValue = JSON.parse(storedValue ?? "[]");
-
-        if (!Array.isArray(parsedValue)) {
-            return [];
-        }
-
-        return parsedValue.filter(
-            (message) =>
-                message
-                && ["user", "assistant"].includes(
-                    message.role
-                )
-                && typeof message.content === "string"
-        ).slice(-20);
-    } catch (error) {
+    if (!Array.isArray(data.messages)) {
         return [];
     }
-}
 
-
-function saveMessages() {
-    localStorage.setItem(
-        getStorageKey(),
-        JSON.stringify(messages.slice(-20)),
+    return data.messages.filter(
+        (message) =>
+            message
+            && ["user", "assistant"].includes(
+                message.role
+            )
+            && typeof message.content === "string"
     );
 }
 
@@ -279,7 +260,6 @@ aiForm.addEventListener("submit", async (event) => {
 
     promptInput.value = "";
     aiError.hidden = true;
-    saveMessages();
     renderMessages();
     setBusyState(true);
 
@@ -290,15 +270,14 @@ aiForm.addEventListener("submit", async (event) => {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                messages,
+                message: content,
             }),
         });
         const data = await readJsonResponse(response);
 
         messages.push(data.message);
         messages = messages.slice(-10);
-        saveMessages();
-        renderMessages();
+            renderMessages();
 
         const speed = Number(
             data.usage?.tokens_per_second ?? 0
@@ -327,19 +306,44 @@ promptInput.addEventListener("keydown", (event) => {
 });
 
 
-clearChatButton.addEventListener("click", () => {
+clearChatButton.addEventListener("click", async () => {
     if (requestIsRunning || messages.length === 0) {
         return;
     }
 
-    if (!window.confirm("Ștergi conversația din browser?")) {
+    if (!window.confirm(
+        "Ștergi definitiv conversația din baza de date?"
+    )) {
         return;
     }
 
-    messages = [];
-    saveMessages();
-    renderMessages();
+    requestIsRunning = true;
+    clearChatButton.disabled = true;
+    sendButton.disabled = true;
+    promptInput.disabled = true;
     aiError.hidden = true;
+
+    try {
+        const response = await fetch("/api/ai/history", {
+            method: "DELETE",
+        });
+        await readJsonResponse(response);
+
+        messages = [];
+        renderMessages();
+        generationStatus.textContent = "";
+        generationStatus.hidden = true;
+    } catch (error) {
+        aiError.textContent = error.message;
+        aiError.hidden = false;
+    } finally {
+        requestIsRunning = false;
+        clearChatButton.disabled = false;
+        sendButton.disabled = false;
+        promptInput.disabled = false;
+        updateModelSwitchButton();
+        promptInput.focus();
+    }
 });
 
 
@@ -354,7 +358,7 @@ async function initializeAiPage() {
         aiUserStatus.textContent =
             `Conectat ca ${currentUser.username}`;
 
-        messages = loadStoredMessages();
+        messages = await loadServerMessages();
         renderMessages();
 
         await loadAiStatus();

@@ -11,7 +11,12 @@ from flask import (
     session,
 )
 
-from app.database import find_user_by_id
+from app.database import (
+    append_ai_message,
+    clear_ai_messages,
+    find_user_by_id,
+    list_ai_messages,
+)
 from app.ai_runtime import (
     AiRuntimeError,
     MODEL_PROFILES,
@@ -32,18 +37,42 @@ MAXIMUM_MESSAGES = 10
 MAXIMUM_MESSAGE_CHARACTERS = 2000
 MAXIMUM_TOTAL_CHARACTERS = 6000
 MAXIMUM_RESPONSE_TOKENS = 256
+HISTORY_DISPLAY_LIMIT = 100
 
-SYSTEM_MESSAGE = (
-    "Ești asistentul AI local al aplicației CloudInBuzunar. "
-    "Răspunde implicit în limba română, clar, practic și concis. "
-    "Nu inventa nume, date, citate, evenimente sau funcții. "
-    "Dacă nu ești sigur, spune clar acest lucru și recomandă "
-    "verificarea informației. Separă faptele cunoscute de "
-    "presupuneri. Nu pretinde că ai acces la internet sau la "
-    "fișierele serverului dacă acestea nu au fost oferite "
-    "explicit în conversație."
-)
+SYSTEM_MESSAGE = """
+Rol:
+Ești CloudInBuzunar, un asistent AI privat care rulează local.
 
+Limbă și stil:
+Răspunde în limba română, exceptând cazul în care utilizatorul
+cere explicit altă limbă. Răspunde direct, natural și concis.
+
+Context și memorie:
+Mesajele furnizate după această instrucțiune reprezintă istoricul
+real al conversației. Folosește informațiile și preferințele
+comunicate explicit de utilizator. Pentru informațiile personale,
+mesajele utilizatorului au prioritate față de răspunsurile
+anterioare ale asistentului. Dacă informațiile se contrazic,
+folosește afirmația cea mai recentă a utilizatorului.
+
+Când utilizatorul spune „ține minte” urmat de o informație,
+confirmă scurt informația. Dacă este întrebat ulterior despre ea,
+răspunde direct din istoricul primit. Nu afirma că nu ai acces la
+un mesaj care este prezent în conversație.
+
+Acuratețe:
+Nu inventa nume, date, citate, evenimente, surse sau capabilități.
+Pentru cunoștințe generale nesigure, spune clar „Nu sunt sigur”
+și separă incertitudinea de faptele cunoscute. Nu pretinde acces
+la internet, cameră, microfon sau fișiere dacă aplicația nu ți-a
+furnizat explicit acele date.
+
+Exemplu de comportament:
+Utilizator: „Ține minte că mașina mea preferată este Bugatti.”
+Asistent: „Am reținut: mașina ta preferată este Bugatti.”
+Utilizator: „Care este mașina mea preferată?”
+Asistent: „Mașina ta preferată este Bugatti.”
+""".strip()
 
 class AiServiceError(Exception):
     pass
@@ -133,60 +162,19 @@ def read_llama_response(rpc_request, timeout):
         ) from error
 
 
-def validate_messages(value):
-    if not isinstance(value, list) or not value:
-        raise ValueError("Messages must be a non-empty list")
+def validate_user_message(value):
+    if not isinstance(value, str):
+        raise ValueError("Message content must be text")
 
-    if len(value) > MAXIMUM_MESSAGES:
-        value = value[-MAXIMUM_MESSAGES:]
+    normalized_content = value.strip()
 
-    messages = []
-    total_characters = 0
+    if not normalized_content:
+        raise ValueError("Message cannot be empty")
 
-    for message in value:
-        if not isinstance(message, dict):
-            raise ValueError("Invalid message")
+    if len(normalized_content) > MAXIMUM_MESSAGE_CHARACTERS:
+        raise ValueError("Message is too long")
 
-        role = message.get("role")
-        content = message.get("content")
-
-        if role not in {"user", "assistant"}:
-            raise ValueError("Invalid message role")
-
-        if not isinstance(content, str):
-            raise ValueError("Message content must be text")
-
-        normalized_content = content.strip()
-
-        if not normalized_content:
-            raise ValueError("Message cannot be empty")
-
-        if (
-            len(normalized_content)
-            > MAXIMUM_MESSAGE_CHARACTERS
-        ):
-            raise ValueError("Message is too long")
-
-        total_characters += len(normalized_content)
-
-        if total_characters > MAXIMUM_TOTAL_CHARACTERS:
-            raise ValueError(
-                "Conversation is too long; clear older messages"
-            )
-
-        messages.append(
-            {
-                "role": role,
-                "content": normalized_content,
-            }
-        )
-
-    if messages[-1]["role"] != "user":
-        raise ValueError(
-            "The final message must belong to the user"
-        )
-
-    return messages
+    return normalized_content
 
 
 @ai_blueprint.get("/ai")
@@ -232,9 +220,42 @@ def ai_switch_model():
     return jsonify(status)
 
 
+@ai_blueprint.get("/api/ai/history")
+@require_ai_login
+def ai_history():
+    user = get_session_user()
+    stored_messages = list_ai_messages(
+        user["id"],
+        limit=HISTORY_DISPLAY_LIMIT,
+    )
+
+    return jsonify(
+        {
+            "messages": [
+                {
+                    "role": message["role"],
+                    "content": message["content"],
+                    "created_at": message["created_at"],
+                }
+                for message in stored_messages
+            ]
+        }
+    )
+
+
+@ai_blueprint.delete("/api/ai/history")
+@require_ai_login
+def ai_clear_history():
+    user = get_session_user()
+    deleted_count = clear_ai_messages(user["id"])
+
+    return jsonify({"deleted": deleted_count})
+
+
 @ai_blueprint.post("/api/ai/chat")
 @require_ai_login
 def ai_chat():
+    user = get_session_user()
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
@@ -243,13 +264,31 @@ def ai_chat():
         ), 400
 
     try:
-        messages = validate_messages(
-            payload.get("messages")
+        user_message = validate_user_message(
+            payload.get("message")
         )
     except ValueError as error:
         return jsonify(
             {"error": str(error)}
         ), 400
+
+    append_ai_message(
+        user["id"],
+        "user",
+        user_message,
+    )
+
+    stored_messages = list_ai_messages(
+        user["id"],
+        limit=MAXIMUM_MESSAGES,
+    )
+    messages = [
+        {
+            "role": message["role"],
+            "content": message["content"],
+        }
+        for message in stored_messages
+    ]
 
     llama_payload = {
         "model": get_active_profile()["model_id"],
@@ -260,8 +299,10 @@ def ai_chat():
             },
             *messages,
         ],
-        "temperature": 0.7,
-        "top_p": 0.9,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 20,
+        "repeat_penalty": 1.05,
         "max_tokens": MAXIMUM_RESPONSE_TOKENS,
         "stream": False,
     }
@@ -292,6 +333,12 @@ def ai_chat():
         return jsonify(
             {"error": str(error) or "Invalid AI response"}
         ), 503
+
+    append_ai_message(
+        user["id"],
+        "assistant",
+        content,
+    )
 
     usage = result.get("usage") or {}
     timings = result.get("timings") or {}
