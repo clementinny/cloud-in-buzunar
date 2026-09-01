@@ -189,3 +189,28 @@
         flex: 1;
     }
 }
+.torrent-upload {
+    display: grid;
+    grid-template-columns: 1fr minmax(220px, auto) auto;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    border: 1px dashed rgba(139, 92, 246, 0.55);
+    border-radius: 14px;
+    background: rgba(139, 92, 246, 0.08);
+}
+
+.torrent-upload p {
+    margin: 5px 0 0;
+    color: #94a3b8;
+}
+
+.torrent-upload input {
+    min-width: 0;
+}
+
+@media (max-width: 720px) {
+    .torrent-upload {
+        grid-template-columns: 1fr;
+    }
+}
