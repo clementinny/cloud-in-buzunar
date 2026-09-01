@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .env
 data/
+*.sqlite3
+*.db
+*.gguf
+*.torrent
+*.aria2
+*.log
+*.before-*
