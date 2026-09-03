@@ -84,6 +84,38 @@ ON monitor_sessions (
 )
 """
 
+MONITOR_SOURCE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monitor_sources (
+    source_id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    desired_state TEXT NOT NULL
+        CHECK (desired_state IN ('armed', 'live')),
+    actual_state TEXT NOT NULL
+        CHECK (
+            actual_state IN (
+                'armed',
+                'starting',
+                'live',
+                'error'
+            )
+        ),
+    camera_facing TEXT NOT NULL
+        CHECK (camera_facing IN ('environment', 'user')),
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+)
+"""
+MONITOR_SOURCE_INDEX = """
+CREATE INDEX IF NOT EXISTS monitor_sources_activity
+ON monitor_sources (
+    last_seen_at
+)
+"""
+
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -105,6 +137,8 @@ def initialize_database():
         connection.execute(AI_MESSAGE_INDEX)
         connection.execute(MONITOR_SESSION_SCHEMA)
         connection.execute(MONITOR_SESSION_INDEX)
+        connection.execute(MONITOR_SOURCE_SCHEMA)
+        connection.execute(MONITOR_SOURCE_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -561,6 +595,10 @@ def get_active_monitor_session(maximum_age_seconds=15):
 
 def touch_monitor_session(session_id, source_user_id):
     now = datetime.now(timezone.utc).isoformat()
+    viewer_cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(seconds=12)
+    ).isoformat()
     connection = open_database()
 
     try:
@@ -577,9 +615,36 @@ def touch_monitor_session(session_id, source_user_id):
                 source_user_id,
             ),
         )
+        if cursor.rowcount == 0:
+            connection.commit()
+            return False
+
+        connection.execute(
+            """
+            DELETE FROM monitor_sessions
+            WHERE session_id = ?
+              AND answer_json IS NOT NULL
+              AND (
+                  viewer_updated_at IS NULL
+                  OR viewer_updated_at < ?
+              )
+            """,
+            (
+                session_id,
+                viewer_cutoff,
+            ),
+        )
+        active_session = connection.execute(
+            """
+            SELECT 1
+            FROM monitor_sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
         connection.commit()
 
-        return cursor.rowcount > 0
+        return active_session is not None
     finally:
         connection.close()
 
@@ -616,6 +681,34 @@ def set_monitor_answer(
         connection.close()
 
 
+def touch_monitor_viewer_session(
+    session_id,
+    viewer_user_id,
+):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE monitor_sessions
+            SET viewer_updated_at = ?
+            WHERE session_id = ?
+              AND viewer_user_id = ?
+              AND answer_json IS NOT NULL
+            """,
+            (
+                now,
+                session_id,
+                viewer_user_id,
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
 def clear_monitor_session(session_id):
     connection = open_database()
 
@@ -629,6 +722,213 @@ def clear_monitor_session(session_id):
         )
         connection.commit()
 
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def arm_monitor_source(
+    source_id,
+    user_id,
+    camera_facing,
+):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute("DELETE FROM monitor_sessions")
+        connection.execute("DELETE FROM monitor_sources")
+        connection.execute(
+            """
+            INSERT INTO monitor_sources (
+                source_id,
+                user_id,
+                desired_state,
+                actual_state,
+                camera_facing,
+                created_at,
+                last_seen_at
+            )
+            VALUES (?, ?, 'armed', 'armed', ?, ?, ?)
+            """,
+            (
+                source_id,
+                user_id,
+                camera_facing,
+                now,
+                now,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_active_monitor_source(maximum_age_seconds=30):
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(seconds=maximum_age_seconds)
+    ).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            DELETE FROM monitor_sources
+            WHERE last_seen_at < ?
+            """,
+            (cutoff,),
+        )
+        source = connection.execute(
+            """
+            SELECT
+                monitor_sources.source_id,
+                monitor_sources.user_id,
+                monitor_sources.desired_state,
+                monitor_sources.actual_state,
+                monitor_sources.camera_facing,
+                monitor_sources.error_message,
+                monitor_sources.created_at,
+                monitor_sources.last_seen_at,
+                users.username
+            FROM monitor_sources
+            JOIN users
+              ON users.id = monitor_sources.user_id
+            ORDER BY monitor_sources.created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+        if source is None:
+            connection.execute("DELETE FROM monitor_sessions")
+
+        connection.commit()
+        return source
+    finally:
+        connection.close()
+
+
+def update_monitor_source(
+    source_id,
+    user_id,
+    actual_state,
+    error_message=None,
+):
+    now = datetime.now(timezone.utc).isoformat()
+    heartbeat_cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(seconds=10)
+    ).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE monitor_sources
+            SET
+                actual_state = ?,
+                error_message = ?,
+                last_seen_at = ?
+            WHERE source_id = ?
+              AND user_id = ?
+              AND (
+                  actual_state != ?
+                  OR COALESCE(error_message, '')
+                     != COALESCE(?, '')
+                  OR last_seen_at < ?
+              )
+            """,
+            (
+                actual_state,
+                error_message,
+                now,
+                source_id,
+                user_id,
+                actual_state,
+                error_message,
+                heartbeat_cutoff,
+            ),
+        )
+
+        source = connection.execute(
+            """
+            SELECT
+                desired_state,
+                camera_facing
+            FROM monitor_sources
+            WHERE source_id = ?
+            """,
+            (source_id,),
+        ).fetchone()
+        connection.commit()
+
+        if source is None:
+            return None
+
+        return source
+    finally:
+        connection.close()
+
+
+def set_monitor_source_desired_state(desired_state):
+    source = get_active_monitor_source()
+
+    if source is None:
+        return None
+
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE monitor_sources
+            SET desired_state = ?
+            WHERE source_id = ?
+            """,
+            (
+                desired_state,
+                source["source_id"],
+            ),
+        )
+
+        if desired_state == "armed":
+            connection.execute("DELETE FROM monitor_sessions")
+
+        connection.commit()
+
+        if cursor.rowcount == 0:
+            return None
+
+        return {
+            "source_id": source["source_id"],
+            "desired_state": desired_state,
+            "updated_at": now,
+        }
+    finally:
+        connection.close()
+
+
+def clear_monitor_source(source_id, user_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            DELETE FROM monitor_sources
+            WHERE source_id = ?
+              AND user_id = ?
+            """,
+            (
+                source_id,
+                user_id,
+            ),
+        )
+
+        if cursor.rowcount > 0:
+            connection.execute("DELETE FROM monitor_sessions")
+
+        connection.commit()
         return cursor.rowcount > 0
     finally:
         connection.close()

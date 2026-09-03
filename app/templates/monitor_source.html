@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/monitor.css') }}?v=1"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=2"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/monitor-source.js') }}?v=1"
+        src="{{ url_for('static', filename='js/monitor-source.js') }}?v=2"
     ></script>
 </head>
 
@@ -34,10 +34,10 @@
         <p class="monitor-label">
             CloudInBuzunar · Sursă locală
         </p>
-        <h1>Telefonul transmite</h1>
+        <h1>Telefon pregătit</h1>
         <p>
-            Camera și microfonul pornesc numai după apăsarea
-            butonului și acordarea permisiunilor din browser.
+            Armează pagina o singură dată, apoi pornești și oprești
+            camera din dashboardul deschis pe PC.
         </p>
     </header>
 
@@ -98,7 +98,7 @@
                     id="start-source-button"
                     type="button"
                 >
-                    Pornește camera și microfonul
+                    Armează controlul de la distanță
                 </button>
 
                 <button
@@ -125,14 +125,16 @@
                     type="button"
                     disabled
                 >
-                    Oprește transmisia
+                    Dezarmează sursa
                 </button>
             </div>
 
             <p class="monitor-privacy-note">
-                Indicatorul roșu rămâne vizibil cât timp captura este
-                activă. În plus, Android afișează propriul indicator
-                pentru cameră și microfon.
+                Lasă Brave deschis pe această pagină și telefonul la
+                încărcat. Cât timp sursa este doar armată, camera și
+                microfonul sunt oprite. Indicatorul roșu apare când
+                captura este activă, iar Android afișează propriul
+                indicator pentru cameră și microfon.
             </p>
         </section>
     </main>

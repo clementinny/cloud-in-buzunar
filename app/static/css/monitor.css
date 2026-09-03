@@ -137,6 +137,18 @@
     box-shadow: 0 0 10px #ef4444;
 }
 
+.monitor-live-badge.is-armed {
+    color: #a5f3fc;
+    border-color: rgba(34, 211, 238, 0.45);
+    background: rgba(8, 145, 178, 0.2);
+    box-shadow: none;
+}
+
+.monitor-live-badge.is-armed::before {
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+}
+
 .monitor-video-frame {
     position: relative;
     display: grid;

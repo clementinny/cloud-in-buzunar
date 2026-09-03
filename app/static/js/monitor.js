@@ -5,11 +5,11 @@ const connectionStatus = document.querySelector(
 const refreshButton = document.querySelector(
     "#refresh-monitor-button",
 );
+const startRemoteButton = document.querySelector(
+    "#start-remote-button",
+);
 const connectButton = document.querySelector(
     "#connect-monitor-button",
-);
-const disconnectButton = document.querySelector(
-    "#disconnect-monitor-button",
 );
 const stopSourceButton = document.querySelector(
     "#stop-source-button",
@@ -24,9 +24,12 @@ const liveBadge = document.querySelector(
 const monitorError = document.querySelector("#monitor-error");
 
 let availableSession = null;
+let sourceIsArmed = false;
 let peerConnection = null;
 let connectedSessionId = null;
 let refreshTimer = null;
+let viewerHeartbeatTimer = null;
+let connectWhenReady = false;
 
 
 async function readJsonResponse(response) {
@@ -97,6 +100,11 @@ function waitForIceGatheringComplete(connection) {
 
 
 function closeViewerConnection(message = null) {
+    if (viewerHeartbeatTimer) {
+        window.clearInterval(viewerHeartbeatTimer);
+        viewerHeartbeatTimer = null;
+    }
+
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
@@ -107,13 +115,39 @@ function closeViewerConnection(message = null) {
     remoteVideo.hidden = true;
     placeholder.hidden = false;
     liveBadge.hidden = true;
-    disconnectButton.disabled = true;
 
     if (message) {
         connectionStatus.textContent = message;
     }
 
     connectButton.disabled = !availableSession;
+}
+
+
+async function sendViewerHeartbeat() {
+    if (!connectedSessionId) {
+        return;
+    }
+
+    const response = await fetch(
+        "/api/monitor/viewer/heartbeat",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                session_id: connectedSessionId,
+            }),
+        },
+    );
+    const data = await readJsonResponse(response);
+
+    if (!data.active) {
+        closeViewerConnection(
+            "Sesiunea de vizualizare s-a încheiat.",
+        );
+    }
 }
 
 
@@ -141,45 +175,6 @@ function updateConnectionState() {
             "Conexiunea cu sursa s-a încheiat.",
         );
     }
-}
-
-
-async function loadMonitorStatus() {
-    const response = await fetch("/api/monitor/status");
-    const data = await readJsonResponse(response);
-
-    if (!data.active || !data.offer) {
-        availableSession = null;
-        monitorStatus.textContent = "Nicio sursă activă";
-        stopSourceButton.disabled = true;
-        connectButton.disabled = true;
-
-        if (peerConnection) {
-            closeViewerConnection(
-                "Sursa de pe telefon a fost oprită.",
-            );
-        }
-
-        return;
-    }
-
-    if (
-        connectedSessionId
-        && connectedSessionId !== data.session_id
-    ) {
-        closeViewerConnection(
-            "A fost pornită o sursă nouă.",
-        );
-    }
-
-    availableSession = data;
-    monitorStatus.textContent =
-        `Activă · pornită de ${data.source.username}`;
-    stopSourceButton.disabled = false;
-    connectButton.disabled = (
-        peerConnection !== null
-        || connectedSessionId === data.session_id
-    );
 }
 
 
@@ -222,7 +217,6 @@ async function connectToSource() {
 
         remoteVideo.hidden = false;
         placeholder.hidden = true;
-        disconnectButton.disabled = false;
 
         remoteVideo.play().catch(() => {
             connectionStatus.textContent =
@@ -251,9 +245,15 @@ async function connectToSource() {
         });
 
         await readJsonResponse(response);
-        disconnectButton.disabled = false;
+        connectWhenReady = false;
         connectionStatus.textContent =
             "Răspuns trimis. Se așteaptă fluxul...";
+
+        viewerHeartbeatTimer = window.setInterval(() => {
+            sendViewerHeartbeat().catch((error) => {
+                showError(error.message);
+            });
+        }, 3000);
     } catch (error) {
         closeViewerConnection(
             "Conexiunea nu a putut fi stabilită.",
@@ -263,35 +263,155 @@ async function connectToSource() {
 }
 
 
-async function stopSource() {
-    if (!availableSession) {
+async function loadMonitorStatus() {
+    const response = await fetch("/api/monitor/status");
+    const data = await readJsonResponse(response);
+
+    sourceIsArmed = data.armed;
+
+    if (!data.armed) {
+        availableSession = null;
+        connectWhenReady = false;
+        monitorStatus.textContent = "Nicio sursă armată";
+        startRemoteButton.disabled = true;
+        stopSourceButton.disabled = true;
+        connectButton.disabled = true;
+
+        if (peerConnection) {
+            closeViewerConnection(
+                "Pagina sursă nu mai este disponibilă.",
+            );
+        }
+
         return;
     }
 
-    if (!window.confirm(
-        "Oprești camera și microfonul de pe telefon?",
-    )) {
+    const ownerName = data.source?.username ?? "administrator";
+
+    if (data.source_state === "error") {
+        monitorStatus.textContent =
+            `Sursă armată de ${ownerName} · eroare`;
+        startRemoteButton.disabled = true;
+        stopSourceButton.disabled = false;
+
+        if (data.source_error) {
+            showError(data.source_error);
+        }
+    } else if (
+        data.source_state === "starting"
+        || data.desired_state === "live"
+        && !data.active
+    ) {
+        monitorStatus.textContent =
+            `Sursă armată de ${ownerName} · camera pornește...`;
+        startRemoteButton.disabled = true;
+        stopSourceButton.disabled = false;
+    } else if (!data.active) {
+        monitorStatus.textContent =
+            `Sursă armată de ${ownerName} · camera este oprită`;
+        startRemoteButton.disabled = false;
+        stopSourceButton.disabled = true;
+        connectButton.disabled = true;
+        availableSession = null;
+
+        if (peerConnection) {
+            closeViewerConnection(
+                "Camera și microfonul au fost oprite.",
+            );
+        }
+
+        return;
+    }
+
+    if (!data.active || !data.offer) {
+        availableSession = null;
+        connectButton.disabled = true;
+        return;
+    }
+
+    if (
+        connectedSessionId
+        && connectedSessionId !== data.session_id
+    ) {
+        closeViewerConnection(
+            "A fost pornită o transmisie nouă.",
+        );
+    }
+
+    availableSession = data;
+    monitorStatus.textContent =
+        `Camera este activă · pornită de ${ownerName}`;
+    startRemoteButton.disabled = true;
+    stopSourceButton.disabled = false;
+    connectButton.disabled = peerConnection !== null;
+
+    if (connectWhenReady && !peerConnection) {
+        await connectToSource();
+    }
+}
+
+
+async function setRemoteCaptureState(state) {
+    const response = await fetch("/api/monitor/control", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({state}),
+    });
+
+    return readJsonResponse(response);
+}
+
+
+async function startRemoteCapture() {
+    if (!sourceIsArmed) {
         return;
     }
 
     clearError();
+    connectWhenReady = true;
+    startRemoteButton.disabled = true;
+    stopSourceButton.disabled = false;
+    monitorStatus.textContent = "Comandă trimisă către telefon...";
+    connectionStatus.textContent =
+        "Camera pornește; conexiunea se va face automat.";
+
+    try {
+        await setRemoteCaptureState("live");
+        await loadMonitorStatus();
+    } catch (error) {
+        connectWhenReady = false;
+        showError(error.message);
+        startRemoteButton.disabled = false;
+    }
+}
+
+
+async function stopRemoteCapture({confirmAction = true} = {}) {
+    if (!sourceIsArmed) {
+        return;
+    }
+
+    if (
+        confirmAction
+        && !window.confirm(
+            "Oprești camera și microfonul de pe telefon? "
+            + "Pagina va rămâne armată.",
+        )
+    ) {
+        return;
+    }
+
+    clearError();
+    connectWhenReady = false;
     stopSourceButton.disabled = true;
 
     try {
-        const sessionId = encodeURIComponent(
-            availableSession.session_id,
-        );
-        const response = await fetch(
-            `/api/monitor/session/${sessionId}`,
-            {
-                method: "DELETE",
-            },
-        );
-
-        await readJsonResponse(response);
+        await setRemoteCaptureState("armed");
         availableSession = null;
         closeViewerConnection(
-            "Transmisia a fost oprită de administrator.",
+            "Camera și microfonul au fost oprite. Sursa rămâne armată.",
         );
         await loadMonitorStatus();
     } catch (error) {
@@ -315,20 +435,18 @@ refreshButton.addEventListener("click", async () => {
 });
 
 
+startRemoteButton.addEventListener("click", () => {
+    startRemoteCapture();
+});
+
+
 connectButton.addEventListener("click", () => {
     connectToSource();
 });
 
 
-disconnectButton.addEventListener("click", () => {
-    closeViewerConnection(
-        "Vizualizarea a fost deconectată. Sursa rămâne activă.",
-    );
-});
-
-
 stopSourceButton.addEventListener("click", () => {
-    stopSource();
+    stopRemoteCapture();
 });
 
 
@@ -349,7 +467,7 @@ async function initializeMonitorPage() {
         loadMonitorStatus().catch((error) => {
             showError(error.message);
         });
-    }, 3000);
+    }, 1000);
 }
 
 
@@ -360,6 +478,17 @@ window.addEventListener("pagehide", () => {
 
     if (peerConnection) {
         peerConnection.close();
+    }
+
+    if (sourceIsArmed && (availableSession || connectedSessionId)) {
+        fetch("/api/monitor/control", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({state: "armed"}),
+            keepalive: true,
+        }).catch(() => {});
     }
 });
 

@@ -92,7 +92,10 @@ Available operations include:
 ### Live monitor
 
 - Direct WebRTC video and audio between the phone and an administrator
-- Capture starts only after a button press and browser permission prompt
+- The phone page can remain armed while camera and microphone stay off
+- An administrator can start and stop capture from the PC dashboard
+- Arming requires a local button press and browser permission prompt
+- A screen wake lock keeps the visible source page active when supported
 - Persistent on-page camera and microphone status indicator
 - Camera and microphone can be paused independently
 - Administrators can stop the source remotely

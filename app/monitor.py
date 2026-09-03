@@ -11,12 +11,18 @@ from flask import (
 )
 
 from app.database import (
+    arm_monitor_source,
+    clear_monitor_source,
     clear_monitor_session,
     create_monitor_session,
     find_user_by_id,
+    get_active_monitor_source,
     get_active_monitor_session,
+    set_monitor_source_desired_state,
     set_monitor_answer,
     touch_monitor_session,
+    touch_monitor_viewer_session,
+    update_monitor_source,
 )
 
 
@@ -24,6 +30,7 @@ monitor_blueprint = Blueprint("monitor", __name__)
 
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 MAXIMUM_SDP_LENGTH = 200_000
+SOURCE_STATES = {"armed", "starting", "live", "error"}
 
 
 def get_session_user():
@@ -123,19 +130,37 @@ def monitor_source_page():
 @monitor_blueprint.get("/api/monitor/status")
 @require_monitor_admin
 def monitor_status():
+    monitor_source = get_active_monitor_source()
     monitor_session = get_active_monitor_session()
 
-    if monitor_session is None:
-        return jsonify({"active": False})
+    response = {
+        "armed": monitor_source is not None,
+        "active": monitor_session is not None,
+        "source_state": None,
+        "source_error": None,
+    }
 
-    return jsonify(
+    if monitor_source is not None:
+        response.update(
+            {
+                "source_state": monitor_source["actual_state"],
+                "desired_state": monitor_source["desired_state"],
+                "source_error": monitor_source["error_message"],
+                "source": {
+                    "id": monitor_source["user_id"],
+                    "username": monitor_source["username"],
+                },
+                "camera_facing": monitor_source["camera_facing"],
+                "source_updated_at": monitor_source["last_seen_at"],
+            }
+        )
+
+    if monitor_session is None:
+        return jsonify(response)
+
+    response.update(
         {
-            "active": True,
             "session_id": monitor_session["session_id"],
-            "source": {
-                "id": monitor_session["source_user_id"],
-                "username": monitor_session["source_username"],
-            },
             "offer": read_json_description(
                 monitor_session["offer_json"]
             ),
@@ -145,6 +170,139 @@ def monitor_status():
             "updated_at": monitor_session[
                 "source_updated_at"
             ],
+        }
+    )
+
+    return jsonify(response)
+
+
+@monitor_blueprint.post("/api/monitor/source/arm")
+@require_monitor_admin
+def monitor_source_arm():
+    user = get_session_user()
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    try:
+        source_id = validate_session_id(payload.get("source_id"))
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    camera_facing = payload.get("camera_facing")
+
+    if camera_facing not in {"environment", "user"}:
+        return jsonify({"error": "Invalid camera selection"}), 400
+
+    arm_monitor_source(
+        source_id,
+        user["id"],
+        camera_facing,
+    )
+
+    return jsonify(
+        {
+            "armed": True,
+            "source_id": source_id,
+            "desired_state": "armed",
+        }
+    ), 201
+
+
+@monitor_blueprint.post("/api/monitor/source/poll")
+@require_monitor_admin
+def monitor_source_poll():
+    user = get_session_user()
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    try:
+        source_id = validate_session_id(payload.get("source_id"))
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    actual_state = payload.get("actual_state")
+
+    if actual_state not in SOURCE_STATES:
+        return jsonify({"error": "Invalid source state"}), 400
+
+    error_message = payload.get("error")
+
+    if error_message is not None:
+        if not isinstance(error_message, str):
+            return jsonify({"error": "Invalid source error"}), 400
+
+        error_message = error_message.strip()[:500] or None
+
+    source = update_monitor_source(
+        source_id,
+        user["id"],
+        actual_state,
+        error_message,
+    )
+
+    if source is None:
+        return jsonify({"armed": False}), 404
+
+    return jsonify(
+        {
+            "armed": True,
+            "desired_state": source["desired_state"],
+            "camera_facing": source["camera_facing"],
+        }
+    )
+
+
+@monitor_blueprint.delete(
+    "/api/monitor/source/<source_id>"
+)
+@require_monitor_admin
+def monitor_source_disarm(source_id):
+    user = get_session_user()
+
+    try:
+        safe_source_id = validate_session_id(source_id)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    was_deleted = clear_monitor_source(
+        safe_source_id,
+        user["id"],
+    )
+
+    return jsonify(
+        {
+            "armed": False,
+            "disarmed": was_deleted,
+        }
+    )
+
+
+@monitor_blueprint.post("/api/monitor/control")
+@require_monitor_admin
+def monitor_control():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    desired_state = payload.get("state")
+
+    if desired_state not in {"armed", "live"}:
+        return jsonify({"error": "Invalid desired state"}), 400
+
+    source = set_monitor_source_desired_state(desired_state)
+
+    if source is None:
+        return jsonify({"error": "No armed source available"}), 404
+
+    return jsonify(
+        {
+            "armed": True,
+            "desired_state": desired_state,
         }
     )
 
@@ -277,6 +435,30 @@ def monitor_answer():
             "session_id": session_id,
         }
     )
+
+
+@monitor_blueprint.post("/api/monitor/viewer/heartbeat")
+@require_monitor_admin
+def monitor_viewer_heartbeat():
+    user = get_session_user()
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    try:
+        session_id = validate_session_id(
+            payload.get("session_id")
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    is_active = touch_monitor_viewer_session(
+        session_id,
+        user["id"],
+    )
+
+    return jsonify({"active": is_active})
 
 
 @monitor_blueprint.delete(

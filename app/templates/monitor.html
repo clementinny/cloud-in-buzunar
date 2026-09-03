@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/monitor.css') }}?v=1"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=2"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/monitor.js') }}?v=1"
+        src="{{ url_for('static', filename='js/monitor.js') }}?v=2"
     ></script>
 </head>
 
@@ -58,11 +58,20 @@
                 </button>
 
                 <button
-                    id="connect-monitor-button"
+                    id="start-remote-button"
                     type="button"
                     disabled
                 >
-                    Conectează
+                    Pornește camera
+                </button>
+
+                <button
+                    id="connect-monitor-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Reconectează
                 </button>
             </div>
         </section>
@@ -107,21 +116,12 @@
 
             <div class="monitor-viewer-actions">
                 <button
-                    id="disconnect-monitor-button"
-                    class="secondary-button"
-                    type="button"
-                    disabled
-                >
-                    Deconectează vizualizarea
-                </button>
-
-                <button
                     id="stop-source-button"
                     class="danger-button"
                     type="button"
                     disabled
                 >
-                    Oprește sursa
+                    Oprește camera și microfonul
                 </button>
             </div>
         </section>
@@ -138,18 +138,20 @@
                     Autentifică-te cu un cont de administrator.
                 </li>
                 <li>
-                    Apasă „Pornește camera și microfonul” și acordă
-                    permisiunile Android.
+                    Apasă „Armează controlul de la distanță”, acordă
+                    permisiunile și lasă Brave deschis în prim-plan.
                 </li>
                 <li>
-                    Revino aici și apasă „Conectează”.
+                    De pe PC apasă „Pornește camera”. Conexiunea se
+                    realizează automat.
                 </li>
             </ol>
 
             <p>
-                Pagina sursă trebuie să rămână deschisă. Android și
-                browserul afișează indicatorii de utilizare pentru
-                cameră și microfon.
+                Cât timp sursa este armată, ecranul este menținut
+                aprins, dar camera și microfonul rămân oprite până la
+                comanda trimisă de pe PC. Android și browserul afișează
+                indicatorii când începe captura.
             </p>
 
             <a
