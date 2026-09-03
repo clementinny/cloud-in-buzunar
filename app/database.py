@@ -59,6 +59,31 @@ ON ai_messages (
 )
 """
 
+MONITOR_SESSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monitor_sessions (
+    session_id TEXT PRIMARY KEY,
+    source_user_id INTEGER NOT NULL,
+    viewer_user_id INTEGER,
+    offer_json TEXT NOT NULL,
+    answer_json TEXT,
+    created_at TEXT NOT NULL,
+    source_updated_at TEXT NOT NULL,
+    viewer_updated_at TEXT,
+    FOREIGN KEY (source_user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (viewer_user_id)
+        REFERENCES users(id)
+        ON DELETE SET NULL
+)
+"""
+MONITOR_SESSION_INDEX = """
+CREATE INDEX IF NOT EXISTS monitor_sessions_source_activity
+ON monitor_sessions (
+    source_updated_at
+)
+"""
+
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -78,6 +103,8 @@ def initialize_database():
         connection.execute(LOGIN_ATTEMPT_INDEX)
         connection.execute(AI_MESSAGE_SCHEMA)
         connection.execute(AI_MESSAGE_INDEX)
+        connection.execute(MONITOR_SESSION_SCHEMA)
+        connection.execute(MONITOR_SESSION_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -453,5 +480,155 @@ def clear_ai_messages(user_id):
         connection.commit()
 
         return cursor.rowcount
+    finally:
+        connection.close()
+
+
+def create_monitor_session(
+    session_id,
+    source_user_id,
+    offer_json,
+):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute("DELETE FROM monitor_sessions")
+        connection.execute(
+            """
+            INSERT INTO monitor_sessions (
+                session_id,
+                source_user_id,
+                offer_json,
+                created_at,
+                source_updated_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                source_user_id,
+                offer_json,
+                now,
+                now,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_active_monitor_session(maximum_age_seconds=15):
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(seconds=maximum_age_seconds)
+    ).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            DELETE FROM monitor_sessions
+            WHERE source_updated_at < ?
+            """,
+            (cutoff,),
+        )
+        monitor_session = connection.execute(
+            """
+            SELECT
+                monitor_sessions.session_id,
+                monitor_sessions.source_user_id,
+                monitor_sessions.viewer_user_id,
+                monitor_sessions.offer_json,
+                monitor_sessions.answer_json,
+                monitor_sessions.created_at,
+                monitor_sessions.source_updated_at,
+                monitor_sessions.viewer_updated_at,
+                users.username AS source_username
+            FROM monitor_sessions
+            JOIN users
+              ON users.id = monitor_sessions.source_user_id
+            ORDER BY monitor_sessions.created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        connection.commit()
+
+        return monitor_session
+    finally:
+        connection.close()
+
+
+def touch_monitor_session(session_id, source_user_id):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE monitor_sessions
+            SET source_updated_at = ?
+            WHERE session_id = ?
+              AND source_user_id = ?
+            """,
+            (
+                now,
+                session_id,
+                source_user_id,
+            ),
+        )
+        connection.commit()
+
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def set_monitor_answer(
+    session_id,
+    viewer_user_id,
+    answer_json,
+):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE monitor_sessions
+            SET
+                viewer_user_id = ?,
+                answer_json = ?,
+                viewer_updated_at = ?
+            WHERE session_id = ?
+            """,
+            (
+                viewer_user_id,
+                answer_json,
+                now,
+                session_id,
+            ),
+        )
+        connection.commit()
+
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def clear_monitor_session(session_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            DELETE FROM monitor_sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        connection.commit()
+
+        return cursor.rowcount > 0
     finally:
         connection.close()

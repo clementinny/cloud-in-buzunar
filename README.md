@@ -18,6 +18,7 @@ local AI and administrative tools in one responsive web dashboard.
 - HTTP, HTTPS, magnet and `.torrent` download management
 - Private local AI using `llama.cpp` and Qwen2.5 models
 - Persistent, per-user AI conversation history
+- Opt-in camera and microphone streaming through WebRTC
 - Automatic rotating backups
 - Responsive interface built without a frontend framework
 
@@ -88,6 +89,16 @@ Available operations include:
 - Large media storage excluded by design
 - Runtime data is stored outside the Git repository
 
+### Live monitor
+
+- Direct WebRTC video and audio between the phone and an administrator
+- Capture starts only after a button press and browser permission prompt
+- Persistent on-page camera and microphone status indicator
+- Camera and microphone can be paused independently
+- Administrators can stop the source remotely
+- Signaling data is kept locally in SQLite
+- No external streaming service or cloud relay is required on the LAN
+
 ## Architecture
 
 ```mermaid
@@ -101,6 +112,7 @@ flowchart TD
     Aria2[aria2 RPC]
     Transmission[Transmission RPC]
     Llama[llama.cpp server]
+    Monitor[WebRTC live monitor]
     Backup[Rotating backups]
 
     Browser --> Flask
@@ -111,6 +123,7 @@ flowchart TD
     Flask --> Aria2
     Flask --> Transmission
     Flask --> Llama
+    Flask --> Monitor
     Backup --> SQLite
     Backup --> Vault
 ```
@@ -142,6 +155,7 @@ app/
 ├── downloads.py        aria2 and Transmission integration
 ├── ai.py               Local AI API and conversation history
 ├── ai_runtime.py       AI model process manager
+├── monitor.py          Local WebRTC signaling API
 ├── static/             JavaScript and CSS
 └── templates/          HTML templates
 ```
@@ -231,7 +245,6 @@ configured reverse proxy and additional security review are required.
 - Unified service-status dashboard
 - HTTPS and reverse-proxy support
 - Expiring public file-sharing links
-- Opt-in camera and microphone monitoring with visible status indicators
 - Automated tests and continuous integration
 - Improved installation and recovery tooling
 

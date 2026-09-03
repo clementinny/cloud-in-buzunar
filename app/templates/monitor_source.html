@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+    <meta name="theme-color" content="#0f172a">
+
+    <title>Sursă monitor · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=monitor-1"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=1"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/monitor-source.js') }}?v=1"
+    ></script>
+</head>
+
+<body class="monitor-page monitor-source-page">
+    <header class="monitor-header">
+        <a class="monitor-back-link" href="/monitor">
+            ← Monitor
+        </a>
+
+        <p class="monitor-label">
+            CloudInBuzunar · Sursă locală
+        </p>
+        <h1>Telefonul transmite</h1>
+        <p>
+            Camera și microfonul pornesc numai după apăsarea
+            butonului și acordarea permisiunilor din browser.
+        </p>
+    </header>
+
+    <main class="monitor-main">
+        <section class="monitor-status-panel">
+            <div>
+                <h2>Stare</h2>
+                <p id="source-status">Se verifică sesiunea...</p>
+            </div>
+
+            <span
+                id="source-live-badge"
+                class="monitor-live-badge monitor-capture-badge"
+                hidden
+            >
+                CAMERĂ / MICROFON ACTIVE
+            </span>
+        </section>
+
+        <section class="monitor-video-panel">
+            <div class="source-settings">
+                <label for="camera-facing-select">
+                    Camera folosită
+                </label>
+
+                <select id="camera-facing-select">
+                    <option value="environment">
+                        Camera din spate
+                    </option>
+                    <option value="user">
+                        Camera frontală
+                    </option>
+                </select>
+            </div>
+
+            <div class="monitor-video-frame source-video-frame">
+                <video
+                    id="local-video"
+                    playsinline
+                    autoplay
+                    muted
+                ></video>
+
+                <p id="source-placeholder">
+                    Previzualizarea va apărea după pornire.
+                </p>
+            </div>
+
+            <p
+                id="source-error"
+                class="monitor-error"
+                role="alert"
+                hidden
+            ></p>
+
+            <div class="source-actions">
+                <button
+                    id="start-source-button"
+                    type="button"
+                >
+                    Pornește camera și microfonul
+                </button>
+
+                <button
+                    id="toggle-camera-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Oprește camera
+                </button>
+
+                <button
+                    id="toggle-microphone-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Oprește microfonul
+                </button>
+
+                <button
+                    id="stop-source-button"
+                    class="danger-button"
+                    type="button"
+                    disabled
+                >
+                    Oprește transmisia
+                </button>
+            </div>
+
+            <p class="monitor-privacy-note">
+                Indicatorul roșu rămâne vizibil cât timp captura este
+                activă. În plus, Android afișează propriul indicator
+                pentru cameră și microfon.
+            </p>
+        </section>
+    </main>
+</body>
+</html>

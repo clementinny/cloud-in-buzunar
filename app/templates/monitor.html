@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+    <meta name="theme-color" content="#0f172a">
+
+    <title>Monitor live · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=monitor-1"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=1"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/monitor.js') }}?v=1"
+    ></script>
+</head>
+
+<body class="monitor-page">
+    <header class="monitor-header">
+        <a class="monitor-back-link" href="/">
+            ← Dashboard
+        </a>
+
+        <p class="monitor-label">
+            CloudInBuzunar · Monitor live
+        </p>
+        <h1>Cameră și microfon</h1>
+        <p>
+            Transmisie directă din browserul telefonului,
+            disponibilă numai administratorilor autentificați.
+        </p>
+    </header>
+
+    <main class="monitor-main">
+        <section class="monitor-status-panel">
+            <div>
+                <h2>Starea sursei</h2>
+                <p id="monitor-status">Se verifică...</p>
+            </div>
+
+            <div class="monitor-status-actions">
+                <button
+                    id="refresh-monitor-button"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Reîncarcă
+                </button>
+
+                <button
+                    id="connect-monitor-button"
+                    type="button"
+                    disabled
+                >
+                    Conectează
+                </button>
+            </div>
+        </section>
+
+        <section class="monitor-video-panel">
+            <div class="monitor-video-heading">
+                <div>
+                    <h2>Transmisie</h2>
+                    <p id="monitor-connection-status">
+                        Așteaptă pornirea sursei de pe telefon.
+                    </p>
+                </div>
+
+                <span
+                    id="monitor-live-badge"
+                    class="monitor-live-badge"
+                    hidden
+                >
+                    LIVE
+                </span>
+            </div>
+
+            <div class="monitor-video-frame">
+                <video
+                    id="remote-video"
+                    playsinline
+                    autoplay
+                    controls
+                ></video>
+
+                <p id="monitor-placeholder">
+                    Nu există momentan o transmisie activă.
+                </p>
+            </div>
+
+            <p
+                id="monitor-error"
+                class="monitor-error"
+                role="alert"
+                hidden
+            ></p>
+
+            <div class="monitor-viewer-actions">
+                <button
+                    id="disconnect-monitor-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Deconectează vizualizarea
+                </button>
+
+                <button
+                    id="stop-source-button"
+                    class="danger-button"
+                    type="button"
+                    disabled
+                >
+                    Oprește sursa
+                </button>
+            </div>
+        </section>
+
+        <section class="monitor-instructions">
+            <h2>Cum pornești transmisia</h2>
+
+            <ol>
+                <li>
+                    Pe telefon, deschide Chrome la
+                    <code>http://127.0.0.1:8080/monitor/source</code>.
+                </li>
+                <li>
+                    Autentifică-te cu un cont de administrator.
+                </li>
+                <li>
+                    Apasă „Pornește camera și microfonul” și acordă
+                    permisiunile Android.
+                </li>
+                <li>
+                    Revino aici și apasă „Conectează”.
+                </li>
+            </ol>
+
+            <p>
+                Pagina sursă trebuie să rămână deschisă. Android și
+                browserul afișează indicatorii de utilizare pentru
+                cameră și microfon.
+            </p>
+
+            <a
+                class="monitor-source-link"
+                href="{{ url_for('monitor.monitor_source_page') }}"
+            >
+                Deschide sursa pe acest telefon
+            </a>
+        </section>
+    </main>
+</body>
+</html>

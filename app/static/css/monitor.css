@@ -1,0 +1,286 @@
+.monitor-page {
+    min-height: 100vh;
+    padding: 32px;
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(239, 68, 68, 0.12),
+            transparent 34%
+        ),
+        radial-gradient(
+            circle at bottom left,
+            rgba(34, 211, 238, 0.1),
+            transparent 36%
+        ),
+        #070b14;
+}
+
+.monitor-header,
+.monitor-main {
+    width: min(1100px, 100%);
+    margin-inline: auto;
+}
+
+.monitor-header {
+    margin-bottom: 28px;
+}
+
+.monitor-back-link {
+    display: inline-flex;
+    margin-bottom: 24px;
+    color: var(--muted);
+    text-decoration: none;
+}
+
+.monitor-back-link:hover {
+    color: white;
+}
+
+.monitor-label {
+    margin: 0 0 8px;
+    color: var(--accent-light);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.monitor-header h1 {
+    max-width: 900px;
+    margin: 0;
+    font-size: clamp(2.5rem, 8vw, 5.5rem);
+    line-height: 0.96;
+}
+
+.monitor-header > p:last-child {
+    max-width: 760px;
+    color: var(--muted);
+    line-height: 1.65;
+}
+
+.monitor-main {
+    display: grid;
+    gap: 20px;
+}
+
+.monitor-status-panel,
+.monitor-video-panel,
+.monitor-instructions {
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background: rgba(15, 23, 42, 0.88);
+}
+
+.monitor-status-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px;
+}
+
+.monitor-status-panel h2,
+.monitor-status-panel p,
+.monitor-video-heading h2,
+.monitor-video-heading p {
+    margin: 0;
+}
+
+.monitor-status-panel p,
+.monitor-video-heading p {
+    margin-top: 6px;
+    color: var(--muted);
+}
+
+.monitor-status-actions,
+.monitor-viewer-actions,
+.source-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.monitor-video-panel,
+.monitor-instructions {
+    padding: 22px;
+}
+
+.monitor-video-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 18px;
+}
+
+.monitor-live-badge {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    padding: 7px 11px;
+    color: #fecaca;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    border: 1px solid rgba(248, 113, 113, 0.5);
+    border-radius: 999px;
+    background: rgba(127, 29, 29, 0.34);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.18);
+}
+
+.monitor-live-badge::before {
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+    content: "";
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 10px #ef4444;
+}
+
+.monitor-video-frame {
+    position: relative;
+    display: grid;
+    min-height: min(62vh, 620px);
+    overflow: hidden;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: #020617;
+}
+
+.monitor-video-frame video {
+    width: 100%;
+    height: 100%;
+    max-height: min(62vh, 620px);
+    object-fit: contain;
+    background: black;
+}
+
+.monitor-video-frame p {
+    padding: 24px;
+    color: var(--muted);
+    text-align: center;
+}
+
+.monitor-error {
+    margin: 14px 0 0;
+    color: #fca5a5;
+}
+
+.monitor-viewer-actions,
+.source-actions {
+    margin-top: 16px;
+}
+
+.danger-button {
+    color: #fecaca;
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(127, 29, 29, 0.26);
+}
+
+.danger-button:hover:not(:disabled) {
+    background: rgba(185, 28, 28, 0.42);
+}
+
+.monitor-instructions h2 {
+    margin-top: 0;
+}
+
+.monitor-instructions ol {
+    display: grid;
+    gap: 10px;
+    padding-left: 24px;
+    line-height: 1.6;
+}
+
+.monitor-instructions p,
+.monitor-privacy-note {
+    color: var(--muted);
+    line-height: 1.6;
+}
+
+.monitor-instructions code {
+    padding: 2px 6px;
+    color: var(--cyan);
+    border-radius: 6px;
+    background: rgba(2, 6, 23, 0.7);
+}
+
+.monitor-source-link {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    color: white;
+    font-weight: 700;
+    text-decoration: none;
+    border: 1px solid rgba(139, 92, 246, 0.72);
+    border-radius: 12px;
+    background: rgba(109, 40, 217, 0.35);
+}
+
+.monitor-source-link:hover {
+    background: rgba(109, 40, 217, 0.55);
+}
+
+.source-settings {
+    display: grid;
+    max-width: 360px;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.source-settings label {
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.source-settings select {
+    width: 100%;
+    padding: 11px 13px;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(2, 6, 23, 0.72);
+    font: inherit;
+}
+
+.source-video-frame {
+    min-height: min(58vh, 600px);
+}
+
+.monitor-capture-badge {
+    max-width: 100%;
+}
+
+@media (max-width: 680px) {
+    .monitor-page {
+        padding: 18px;
+    }
+
+    .monitor-status-panel,
+    .monitor-video-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .monitor-status-actions,
+    .monitor-viewer-actions,
+    .source-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .monitor-status-actions button,
+    .monitor-viewer-actions button,
+    .source-actions button,
+    .monitor-source-link {
+        width: 100%;
+    }
+
+    .monitor-video-frame,
+    .source-video-frame {
+        min-height: 340px;
+    }
+}
