@@ -319,7 +319,7 @@ def ai_chat():
     try:
         result = read_llama_response(
             rpc_request,
-            timeout=120,
+            timeout=300,
         )
         content = result["choices"][0]["message"][
             "content"
