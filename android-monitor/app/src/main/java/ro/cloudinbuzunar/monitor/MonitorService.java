@@ -137,7 +137,13 @@ public final class MonitorService extends Service {
         cleanupCapture();
         releaseLocks();
         executor.shutdownNow();
-        broadcastState("stopped", "Serviciul a fost oprit.");
+
+        if ("error".equals(state)) {
+            broadcastState("error", errorMessage);
+        } else {
+            broadcastState("stopped", "Serviciul a fost oprit.");
+        }
+
         super.onDestroy();
     }
 
@@ -670,6 +676,7 @@ public final class MonitorService extends Service {
     }
 
     private void failAndStop(String message) {
+        Log.e(LOG_TAG, message);
         state = "error";
         errorMessage = message;
         publishState("error", message);
