@@ -111,7 +111,12 @@ def require_monitor_source(view_function):
                 {"error": "Monitor device authentication required"}
             ), 401
 
-        g.monitor_source_user = device
+        g.monitor_source_user = {
+            "id": device["user_id"],
+            "username": device["username"],
+            "role": device["role"],
+            "is_active": device["is_active"],
+        }
         g.monitor_device = device
         return view_function(*args, **kwargs)
 
