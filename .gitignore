@@ -10,3 +10,7 @@ data/
 *.aria2
 *.log
 *.before-*
+android-monitor/.gradle/
+android-monitor/local.properties
+android-monitor/build/
+android-monitor/app/build/

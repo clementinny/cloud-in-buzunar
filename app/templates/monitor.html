@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/monitor.css') }}?v=2"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=3"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/monitor.js') }}?v=2"
+        src="{{ url_for('static', filename='js/monitor.js') }}?v=3"
     ></script>
 </head>
 
@@ -36,7 +36,7 @@
         </p>
         <h1>Cameră și microfon</h1>
         <p>
-            Transmisie directă din browserul telefonului,
+            Transmisie directă din aplicația Android a telefonului,
             disponibilă numai administratorilor autentificați.
         </p>
     </header>
@@ -126,39 +126,67 @@
             </div>
         </section>
 
+        <section class="monitor-pairing-panel">
+            <div>
+                <h2>Asociază aplicația Android</h2>
+                <p>
+                    Generează un cod unic, apoi introdu-l în aplicația
+                    CloudInBuzunar Monitor de pe telefon. Codul expiră
+                    după 5 minute și poate fi folosit o singură dată.
+                </p>
+            </div>
+
+            <div class="monitor-pairing-actions">
+                <button
+                    id="create-pairing-code-button"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Generează cod
+                </button>
+
+                <output
+                    id="pairing-code"
+                    class="monitor-pairing-code"
+                    hidden
+                ></output>
+
+                <p id="pairing-code-status" hidden></p>
+            </div>
+        </section>
+
         <section class="monitor-instructions">
-            <h2>Cum pornești transmisia</h2>
+            <h2>Cum pornești transmisia cu ecranul stins</h2>
 
             <ol>
                 <li>
-                    Pe telefon, deschide Chrome la
-                    <code>http://127.0.0.1:8080/monitor/source</code>.
+                    Instalează și deschide aplicația
+                    <strong>CloudInBuzunar Monitor</strong> pe telefon.
                 </li>
                 <li>
-                    Autentifică-te cu un cont de administrator.
+                    Generează codul de mai sus și asociază aplicația.
                 </li>
                 <li>
-                    Apasă „Armează controlul de la distanță”, acordă
-                    permisiunile și lasă Brave deschis în prim-plan.
+                    Apasă „Armează”, acordă permisiunile și lasă
+                    notificarea permanentă activă.
                 </li>
                 <li>
                     De pe PC apasă „Pornește camera”. Conexiunea se
-                    realizează automat.
+                    realizează automat chiar dacă ecranul este stins.
                 </li>
             </ol>
 
             <p>
-                Cât timp sursa este armată, ecranul este menținut
-                aprins, dar camera și microfonul rămân oprite până la
-                comanda trimisă de pe PC. Android și browserul afișează
-                indicatorii când începe captura.
+                În starea „Armat”, camera și microfonul sunt oprite.
+                Android păstrează o notificare vizibilă, iar indicatorii
+                de confidențialitate apar când începe efectiv captura.
             </p>
 
             <a
                 class="monitor-source-link"
                 href="{{ url_for('monitor.monitor_source_page') }}"
             >
-                Deschide sursa pe acest telefon
+                Folosește temporar sursa din browser
             </a>
         </section>
     </main>

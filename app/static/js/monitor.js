@@ -22,6 +22,13 @@ const liveBadge = document.querySelector(
     "#monitor-live-badge",
 );
 const monitorError = document.querySelector("#monitor-error");
+const createPairingCodeButton = document.querySelector(
+    "#create-pairing-code-button",
+);
+const pairingCode = document.querySelector("#pairing-code");
+const pairingCodeStatus = document.querySelector(
+    "#pairing-code-status",
+);
 
 let availableSession = null;
 let sourceIsArmed = false;
@@ -447,6 +454,30 @@ connectButton.addEventListener("click", () => {
 
 stopSourceButton.addEventListener("click", () => {
     stopRemoteCapture();
+});
+
+
+createPairingCodeButton.addEventListener("click", async () => {
+    clearError();
+    createPairingCodeButton.disabled = true;
+
+    try {
+        const response = await fetch(
+            "/api/monitor/devices/pairing-code",
+            {method: "POST"},
+        );
+        const data = await readJsonResponse(response);
+
+        pairingCode.textContent = data.code;
+        pairingCode.hidden = false;
+        pairingCodeStatus.textContent =
+            "Valabil 5 minute · o singură utilizare";
+        pairingCodeStatus.hidden = false;
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        createPairingCodeButton.disabled = false;
+    }
 });
 
 

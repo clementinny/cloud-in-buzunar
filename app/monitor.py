@@ -1,9 +1,12 @@
 import json
+import hashlib
 import re
+import secrets
 from functools import wraps
 
 from flask import (
     Blueprint,
+    g,
     jsonify,
     render_template,
     request,
@@ -15,7 +18,10 @@ from app.database import (
     clear_monitor_source,
     clear_monitor_session,
     create_monitor_session,
+    create_monitor_pairing_code,
+    consume_monitor_pairing_code,
     find_user_by_id,
+    find_monitor_device_by_token_hash,
     get_active_monitor_source,
     get_active_monitor_session,
     set_monitor_source_desired_state,
@@ -31,6 +37,7 @@ monitor_blueprint = Blueprint("monitor", __name__)
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 MAXIMUM_SDP_LENGTH = 200_000
 SOURCE_STATES = {"armed", "starting", "live", "error"}
+PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def get_session_user():
@@ -63,6 +70,49 @@ def require_monitor_admin(view_function):
                 {"error": "Administrator access required"}
             ), 403
 
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def hash_monitor_secret(value):
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def get_bearer_token():
+    authorization = request.headers.get("Authorization", "")
+
+    if not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization[7:].strip()
+    return token or None
+
+
+def require_monitor_source(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        user = get_session_user()
+
+        if user is not None and user["role"] == "admin":
+            g.monitor_source_user = user
+            return view_function(*args, **kwargs)
+
+        token = get_bearer_token()
+        device = None
+
+        if token is not None:
+            device = find_monitor_device_by_token_hash(
+                hash_monitor_secret(token)
+            )
+
+        if device is None:
+            return jsonify(
+                {"error": "Monitor device authentication required"}
+            ), 401
+
+        g.monitor_source_user = device
+        g.monitor_device = device
         return view_function(*args, **kwargs)
 
     return wrapped_view
@@ -127,6 +177,78 @@ def monitor_source_page():
     return render_template("monitor_source.html")
 
 
+@monitor_blueprint.post("/api/monitor/devices/pairing-code")
+@require_monitor_admin
+def monitor_create_pairing_code():
+    user = get_session_user()
+    raw_code = "".join(
+        secrets.choice(PAIRING_ALPHABET) for _ in range(8)
+    )
+    display_code = f"{raw_code[:4]}-{raw_code[4:]}"
+    expires_at = create_monitor_pairing_code(
+        hash_monitor_secret(raw_code),
+        user["id"],
+    )
+
+    return jsonify(
+        {
+            "code": display_code,
+            "expires_at": expires_at,
+            "expires_in_seconds": 300,
+        }
+    ), 201
+
+
+@monitor_blueprint.post("/api/monitor/devices/pair")
+def monitor_pair_device():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    pairing_code = payload.get("code")
+    device_name = payload.get("device_name")
+
+    if not isinstance(pairing_code, str):
+        return jsonify({"error": "Invalid pairing code"}), 400
+
+    normalized_code = re.sub(
+        r"[^A-Za-z0-9]",
+        "",
+        pairing_code,
+    ).upper()
+
+    if len(normalized_code) != 8:
+        return jsonify({"error": "Invalid pairing code"}), 400
+
+    if not isinstance(device_name, str):
+        return jsonify({"error": "Invalid device name"}), 400
+
+    safe_device_name = device_name.strip()[:80]
+
+    if not safe_device_name:
+        return jsonify({"error": "Invalid device name"}), 400
+
+    token = secrets.token_urlsafe(32)
+    device = consume_monitor_pairing_code(
+        hash_monitor_secret(normalized_code),
+        safe_device_name,
+        hash_monitor_secret(token),
+    )
+
+    if device is None:
+        return jsonify(
+            {"error": "Pairing code is invalid or expired"}
+        ), 401
+
+    return jsonify(
+        {
+            "token": token,
+            "device": device,
+        }
+    ), 201
+
+
 @monitor_blueprint.get("/api/monitor/status")
 @require_monitor_admin
 def monitor_status():
@@ -177,9 +299,9 @@ def monitor_status():
 
 
 @monitor_blueprint.post("/api/monitor/source/arm")
-@require_monitor_admin
+@require_monitor_source
 def monitor_source_arm():
-    user = get_session_user()
+    user = g.monitor_source_user
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
@@ -211,9 +333,9 @@ def monitor_source_arm():
 
 
 @monitor_blueprint.post("/api/monitor/source/poll")
-@require_monitor_admin
+@require_monitor_source
 def monitor_source_poll():
-    user = get_session_user()
+    user = g.monitor_source_user
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
@@ -259,9 +381,9 @@ def monitor_source_poll():
 @monitor_blueprint.delete(
     "/api/monitor/source/<source_id>"
 )
-@require_monitor_admin
+@require_monitor_source
 def monitor_source_disarm(source_id):
-    user = get_session_user()
+    user = g.monitor_source_user
 
     try:
         safe_source_id = validate_session_id(source_id)
@@ -308,9 +430,9 @@ def monitor_control():
 
 
 @monitor_blueprint.post("/api/monitor/offer")
-@require_monitor_admin
+@require_monitor_source
 def monitor_offer():
-    user = get_session_user()
+    user = g.monitor_source_user
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
@@ -342,9 +464,9 @@ def monitor_offer():
 
 
 @monitor_blueprint.post("/api/monitor/heartbeat")
-@require_monitor_admin
+@require_monitor_source
 def monitor_heartbeat():
-    user = get_session_user()
+    user = g.monitor_source_user
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
@@ -366,7 +488,7 @@ def monitor_heartbeat():
 
 
 @monitor_blueprint.get("/api/monitor/answer")
-@require_monitor_admin
+@require_monitor_source
 def monitor_answer_status():
     try:
         session_id = validate_session_id(
@@ -464,7 +586,7 @@ def monitor_viewer_heartbeat():
 @monitor_blueprint.delete(
     "/api/monitor/session/<session_id>"
 )
-@require_monitor_admin
+@require_monitor_source
 def monitor_stop(session_id):
     try:
         safe_session_id = validate_session_id(session_id)

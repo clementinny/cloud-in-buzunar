@@ -64,7 +64,8 @@
 
 .monitor-status-panel,
 .monitor-video-panel,
-.monitor-instructions {
+.monitor-instructions,
+.monitor-pairing-panel {
     border: 1px solid var(--border);
     border-radius: 22px;
     background: rgba(15, 23, 42, 0.88);
@@ -100,8 +101,45 @@
 }
 
 .monitor-video-panel,
-.monitor-instructions {
+.monitor-instructions,
+.monitor-pairing-panel {
     padding: 22px;
+}
+
+.monitor-pairing-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, auto);
+    align-items: center;
+    gap: 24px;
+}
+
+.monitor-pairing-panel h2,
+.monitor-pairing-panel p {
+    margin: 0;
+}
+
+.monitor-pairing-panel p {
+    margin-top: 6px;
+    color: var(--muted);
+    line-height: 1.55;
+}
+
+.monitor-pairing-actions {
+    display: grid;
+    gap: 10px;
+}
+
+.monitor-pairing-code {
+    padding: 14px 18px;
+    color: var(--cyan);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: clamp(1.45rem, 4vw, 2rem);
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-align: center;
+    border: 1px solid rgba(34, 211, 238, 0.45);
+    border-radius: 12px;
+    background: rgba(8, 145, 178, 0.12);
 }
 
 .monitor-video-heading {
@@ -272,9 +310,14 @@
     }
 
     .monitor-status-panel,
-    .monitor-video-heading {
+    .monitor-video-heading,
+    .monitor-pairing-panel {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .monitor-pairing-panel {
+        grid-template-columns: 1fr;
     }
 
     .monitor-status-actions,

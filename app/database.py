@@ -116,6 +116,41 @@ ON monitor_sources (
 )
 """
 
+MONITOR_PAIRING_CODE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monitor_pairing_codes (
+    code_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+)
+"""
+
+MONITOR_DEVICE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monitor_devices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    device_name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+)
+"""
+
+MONITOR_DEVICE_INDEX = """
+CREATE INDEX IF NOT EXISTS monitor_devices_user
+ON monitor_devices (
+    user_id,
+    revoked_at
+)
+"""
+
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -139,6 +174,9 @@ def initialize_database():
         connection.execute(MONITOR_SESSION_INDEX)
         connection.execute(MONITOR_SOURCE_SCHEMA)
         connection.execute(MONITOR_SOURCE_INDEX)
+        connection.execute(MONITOR_PAIRING_CODE_SCHEMA)
+        connection.execute(MONITOR_DEVICE_SCHEMA)
+        connection.execute(MONITOR_DEVICE_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -930,5 +968,156 @@ def clear_monitor_source(source_id, user_id):
 
         connection.commit()
         return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def create_monitor_pairing_code(code_hash, user_id, lifetime_seconds=300):
+    now = datetime.now(timezone.utc)
+    expires_at = (
+        now + timedelta(seconds=lifetime_seconds)
+    ).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            DELETE FROM monitor_pairing_codes
+            WHERE user_id = ?
+               OR expires_at < ?
+            """,
+            (user_id, now.isoformat()),
+        )
+        connection.execute(
+            """
+            INSERT INTO monitor_pairing_codes (
+                code_hash,
+                user_id,
+                expires_at,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                code_hash,
+                user_id,
+                expires_at,
+                now.isoformat(),
+            ),
+        )
+        connection.commit()
+        return expires_at
+    finally:
+        connection.close()
+
+
+def consume_monitor_pairing_code(code_hash, device_name, token_hash):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        pairing_code = connection.execute(
+            """
+            SELECT
+                monitor_pairing_codes.user_id,
+                users.username,
+                users.role,
+                users.is_active
+            FROM monitor_pairing_codes
+            JOIN users
+              ON users.id = monitor_pairing_codes.user_id
+            WHERE monitor_pairing_codes.code_hash = ?
+              AND monitor_pairing_codes.expires_at >= ?
+            """,
+            (code_hash, now),
+        ).fetchone()
+
+        if (
+            pairing_code is None
+            or not pairing_code["is_active"]
+            or pairing_code["role"] != "admin"
+        ):
+            connection.execute(
+                "DELETE FROM monitor_pairing_codes WHERE expires_at < ?",
+                (now,),
+            )
+            connection.commit()
+            return None
+
+        connection.execute(
+            "DELETE FROM monitor_pairing_codes WHERE code_hash = ?",
+            (code_hash,),
+        )
+        cursor = connection.execute(
+            """
+            INSERT INTO monitor_devices (
+                user_id,
+                device_name,
+                token_hash,
+                created_at,
+                last_seen_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                pairing_code["user_id"],
+                device_name,
+                token_hash,
+                now,
+                now,
+            ),
+        )
+        connection.commit()
+
+        return {
+            "id": cursor.lastrowid,
+            "user_id": pairing_code["user_id"],
+            "username": pairing_code["username"],
+            "device_name": device_name,
+        }
+    finally:
+        connection.close()
+
+
+def find_monitor_device_by_token_hash(token_hash):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        device = connection.execute(
+            """
+            SELECT
+                monitor_devices.id,
+                monitor_devices.user_id,
+                monitor_devices.device_name,
+                users.username,
+                users.role,
+                users.is_active
+            FROM monitor_devices
+            JOIN users
+              ON users.id = monitor_devices.user_id
+            WHERE monitor_devices.token_hash = ?
+              AND monitor_devices.revoked_at IS NULL
+            """,
+            (token_hash,),
+        ).fetchone()
+
+        if (
+            device is None
+            or not device["is_active"]
+            or device["role"] != "admin"
+        ):
+            return None
+
+        connection.execute(
+            """
+            UPDATE monitor_devices
+            SET last_seen_at = ?
+            WHERE id = ?
+            """,
+            (now, device["id"]),
+        )
+        connection.commit()
+        return device
     finally:
         connection.close()

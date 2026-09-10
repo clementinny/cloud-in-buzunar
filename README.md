@@ -92,15 +92,22 @@ Available operations include:
 ### Live monitor
 
 - Direct WebRTC video and audio between the phone and an administrator
-- The phone page can remain armed while camera and microphone stay off
+- Native Android companion app in `android-monitor/`
+- Foreground service remains armed when the screen is off
+- Camera and microphone stay off until an administrator starts capture
 - An administrator can start and stop capture from the PC dashboard
-- Arming requires a local button press and browser permission prompt
-- A screen wake lock keeps the visible source page active when supported
-- Persistent on-page camera and microphone status indicator
-- Camera and microphone can be paused independently
+- Pairing uses a single-use code instead of storing an administrator password
+- Device tokens are encrypted with Android Keystore
+- Arming requires a local button press and Android permissions
+- Persistent Android notification shows the armed/live state
 - Administrators can stop the source remotely
 - Signaling data is kept locally in SQLite
 - No external streaming service or cloud relay is required on the LAN
+
+The browser source remains available as a foreground-only fallback. Android
+does not allow a camera/microphone foreground service to be cold-started from
+the background, so the companion app must be opened and armed again after a
+phone restart or Force stop.
 
 ## Architecture
 
@@ -162,6 +169,28 @@ app/
 ├── static/             JavaScript and CSS
 └── templates/          HTML templates
 ```
+
+The native companion lives separately:
+
+```text
+android-monitor/
+└── app/                 Android camera/microphone foreground service
+```
+
+### Build the Android companion
+
+The GitHub Actions workflow **Build Android monitor APK** builds a debug APK
+whenever `android-monitor/` changes. Download the
+`cloud-in-buzunar-monitor-debug` artifact from the completed workflow run and
+install `app-debug.apk` on the server phone.
+
+After installation:
+
+1. Open `/monitor` on the PC while logged in as administrator.
+2. Generate a pairing code.
+3. Open the Android app and enter the code.
+4. Grant camera, microphone and notification permissions, then tap **Arm**.
+5. The phone screen may now be turned off; start and stop capture from the PC.
 
 ## Quick start
 
