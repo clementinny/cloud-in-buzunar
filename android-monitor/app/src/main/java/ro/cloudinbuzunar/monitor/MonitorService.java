@@ -18,7 +18,6 @@ import org.json.JSONObject;
 import org.webrtc.AudioSource;
 import org.webrtc.AudioTrack;
 import org.webrtc.Camera1Enumerator;
-import org.webrtc.Camera2Enumerator;
 import org.webrtc.CameraEnumerator;
 import org.webrtc.CameraVideoCapturer;
 import org.webrtc.DataChannel;
@@ -381,9 +380,9 @@ public final class MonitorService extends Service {
     }
 
     private void createLocalTracks() throws Exception {
-        CameraEnumerator enumerator = Camera2Enumerator.isSupported(this)
-            ? new Camera2Enumerator(this)
-            : new Camera1Enumerator(true);
+        // Camera1 is intentionally used for stability on older Samsung devices.
+        // Some vendor Camera2 implementations can terminate the capture thread.
+        CameraEnumerator enumerator = new Camera1Enumerator(true);
         String selectedDevice = selectCamera(enumerator, cameraFacing);
 
         if (selectedDevice == null) {
@@ -406,7 +405,7 @@ public final class MonitorService extends Service {
             this,
             videoSource.getCapturerObserver()
         );
-        cameraCapturer.startCapture(1280, 720, 24);
+        cameraCapturer.startCapture(640, 480, 15);
         videoTrack = peerConnectionFactory.createVideoTrack(
             "cloud-monitor-video",
             videoSource
