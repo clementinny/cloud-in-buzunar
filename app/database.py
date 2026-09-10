@@ -908,7 +908,10 @@ def update_monitor_source(
         connection.close()
 
 
-def set_monitor_source_desired_state(desired_state):
+def set_monitor_source_desired_state(
+    desired_state,
+    camera_facing=None,
+):
     source = get_active_monitor_source()
 
     if source is None:
@@ -918,14 +921,20 @@ def set_monitor_source_desired_state(desired_state):
     connection = open_database()
 
     try:
+        if camera_facing is None:
+            camera_facing = source["camera_facing"]
+
         cursor = connection.execute(
             """
             UPDATE monitor_sources
-            SET desired_state = ?
+            SET
+                desired_state = ?,
+                camera_facing = ?
             WHERE source_id = ?
             """,
             (
                 desired_state,
+                camera_facing,
                 source["source_id"],
             ),
         )
@@ -941,6 +950,7 @@ def set_monitor_source_desired_state(desired_state):
         return {
             "source_id": source["source_id"],
             "desired_state": desired_state,
+            "camera_facing": camera_facing,
             "updated_at": now,
         }
     finally:

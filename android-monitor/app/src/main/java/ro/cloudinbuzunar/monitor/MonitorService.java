@@ -98,6 +98,7 @@ public final class MonitorService extends Service {
         String action = intent == null ? null : intent.getAction();
 
         if (ACTION_DISARM.equals(action)) {
+            MonitorStateStore.disarm(this);
             executor.execute(this::disarmAndStop);
             return START_NOT_STICKY;
         }
@@ -108,10 +109,19 @@ public final class MonitorService extends Service {
         }
 
         if (!ACTION_ARM.equals(action)) {
-            if (!armed) {
+            if (!armed && !MonitorStateStore.isArmed(this)) {
                 stopSelf();
                 return START_NOT_STICKY;
             }
+
+            if (!armed) {
+                cameraFacing = MonitorStateStore.cameraFacing(this);
+                startAsForeground(
+                    "Se reface legătura · camera și microfonul sunt oprite"
+                );
+                executor.execute(this::armOnServer);
+            }
+
             return START_STICKY;
         }
 
@@ -121,6 +131,7 @@ public final class MonitorService extends Service {
             cameraFacing = "environment";
         }
 
+        MonitorStateStore.arm(this, cameraFacing);
         startAsForeground("Armat · camera și microfonul sunt oprite");
         executor.execute(this::armOnServer);
         return START_STICKY;
@@ -187,6 +198,20 @@ public final class MonitorService extends Service {
         try {
             JSONObject response = api.poll(sourceId, state, errorMessage);
             String desiredState = response.getString("desired_state");
+            String requestedCameraFacing = response.optString(
+                "camera_facing",
+                cameraFacing
+            );
+
+            if (
+                "user".equals(requestedCameraFacing)
+                || "environment".equals(requestedCameraFacing)
+            ) {
+                if (!requestedCameraFacing.equals(cameraFacing)) {
+                    cameraFacing = requestedCameraFacing;
+                    MonitorStateStore.updateCameraFacing(this, cameraFacing);
+                }
+            }
 
             if ("live".equals(desiredState)) {
                 if ("armed".equals(state) && !captureStarting) {
@@ -341,6 +366,7 @@ public final class MonitorService extends Service {
     }
 
     private void disarmAndStop() {
+        MonitorStateStore.disarm(this);
         armed = false;
         cleanupCapture();
 
@@ -688,6 +714,7 @@ public final class MonitorService extends Service {
 
     private void failAndStop(String message) {
         Log.e(LOG_TAG, message);
+        MonitorStateStore.disarm(this);
         state = "error";
         errorMessage = message;
         publishState("error", message);

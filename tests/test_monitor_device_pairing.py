@@ -72,6 +72,33 @@ class MonitorDevicePairingTest(unittest.TestCase):
         )
         self.assertEqual(arm_response.status_code, 201)
 
+        camera_response = admin_client.post(
+            "/api/monitor/control",
+            json={
+                "state": "live",
+                "camera_facing": "user",
+            },
+        )
+        self.assertEqual(camera_response.status_code, 200)
+        self.assertEqual(
+            camera_response.get_json()["camera_facing"],
+            "user",
+        )
+
+        poll_response = device_client.post(
+            "/api/monitor/source/poll",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "source_id": source_id,
+                "actual_state": "armed",
+            },
+        )
+        self.assertEqual(poll_response.status_code, 200)
+        self.assertEqual(
+            poll_response.get_json()["camera_facing"],
+            "user",
+        )
+
         rejected_response = device_client.post(
             "/api/monitor/source/poll",
             headers={"Authorization": "Bearer invalid-token"},

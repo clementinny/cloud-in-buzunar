@@ -29,6 +29,9 @@ const pairingCode = document.querySelector("#pairing-code");
 const pairingCodeStatus = document.querySelector(
     "#pairing-code-status",
 );
+const cameraFacingSelect = document.querySelector(
+    "#monitor-camera-facing",
+);
 
 let availableSession = null;
 let sourceIsArmed = false;
@@ -37,6 +40,7 @@ let connectedSessionId = null;
 let refreshTimer = null;
 let viewerHeartbeatTimer = null;
 let connectWhenReady = false;
+let cameraSelectionInitialized = false;
 
 
 async function readJsonResponse(response) {
@@ -277,6 +281,8 @@ async function loadMonitorStatus() {
     sourceIsArmed = data.armed;
 
     if (!data.armed) {
+        cameraSelectionInitialized = false;
+        cameraFacingSelect.disabled = true;
         availableSession = null;
         connectWhenReady = false;
         monitorStatus.textContent = "Nicio sursă armată";
@@ -295,11 +301,17 @@ async function loadMonitorStatus() {
 
     const ownerName = data.source?.username ?? "administrator";
 
+    if (!cameraSelectionInitialized && data.camera_facing) {
+        cameraFacingSelect.value = data.camera_facing;
+        cameraSelectionInitialized = true;
+    }
+
     if (data.source_state === "error") {
         monitorStatus.textContent =
             `Sursă armată de ${ownerName} · eroare`;
         startRemoteButton.disabled = true;
         stopSourceButton.disabled = false;
+        cameraFacingSelect.disabled = true;
 
         if (data.source_error) {
             showError(data.source_error);
@@ -313,11 +325,13 @@ async function loadMonitorStatus() {
             `Sursă armată de ${ownerName} · camera pornește...`;
         startRemoteButton.disabled = true;
         stopSourceButton.disabled = false;
+        cameraFacingSelect.disabled = true;
     } else if (!data.active) {
         monitorStatus.textContent =
             `Sursă armată de ${ownerName} · camera este oprită`;
         startRemoteButton.disabled = false;
         stopSourceButton.disabled = true;
+        cameraFacingSelect.disabled = false;
         connectButton.disabled = true;
         availableSession = null;
 
@@ -350,6 +364,7 @@ async function loadMonitorStatus() {
         `Camera este activă · pornită de ${ownerName}`;
     startRemoteButton.disabled = true;
     stopSourceButton.disabled = false;
+    cameraFacingSelect.disabled = true;
     connectButton.disabled = peerConnection !== null;
 
     if (connectWhenReady && !peerConnection) {
@@ -358,13 +373,19 @@ async function loadMonitorStatus() {
 }
 
 
-async function setRemoteCaptureState(state) {
+async function setRemoteCaptureState(state, cameraFacing = null) {
+    const payload = {state};
+
+    if (cameraFacing) {
+        payload.camera_facing = cameraFacing;
+    }
+
     const response = await fetch("/api/monitor/control", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({state}),
+        body: JSON.stringify(payload),
     });
 
     return readJsonResponse(response);
@@ -385,7 +406,10 @@ async function startRemoteCapture() {
         "Camera pornește; conexiunea se va face automat.";
 
     try {
-        await setRemoteCaptureState("live");
+        await setRemoteCaptureState(
+            "live",
+            cameraFacingSelect.value,
+        );
         await loadMonitorStatus();
     } catch (error) {
         connectWhenReady = false;

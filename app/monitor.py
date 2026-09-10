@@ -421,7 +421,18 @@ def monitor_control():
     if desired_state not in {"armed", "live"}:
         return jsonify({"error": "Invalid desired state"}), 400
 
-    source = set_monitor_source_desired_state(desired_state)
+    camera_facing = payload.get("camera_facing")
+
+    if camera_facing is not None and camera_facing not in {
+        "environment",
+        "user",
+    }:
+        return jsonify({"error": "Invalid camera selection"}), 400
+
+    source = set_monitor_source_desired_state(
+        desired_state,
+        camera_facing,
+    )
 
     if source is None:
         return jsonify({"error": "No armed source available"}), 404
@@ -430,6 +441,7 @@ def monitor_control():
         {
             "armed": True,
             "desired_state": desired_state,
+            "camera_facing": source["camera_facing"],
         }
     )
 

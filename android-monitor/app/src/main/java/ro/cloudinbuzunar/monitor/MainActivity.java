@@ -80,6 +80,9 @@ public final class MainActivity extends Activity {
             new String[]{"Camera principală", "Camera frontală"}
         );
         cameraFacingSpinner.setAdapter(cameraAdapter);
+        cameraFacingSpinner.setSelection(
+            "user".equals(MonitorStateStore.cameraFacing(this)) ? 1 : 0
+        );
 
         pairButton.setOnClickListener(view -> pairDevice());
         armButton.setOnClickListener(view -> requestPermissionsAndArm());
