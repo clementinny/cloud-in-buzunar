@@ -180,9 +180,10 @@ android-monitor/
 ### Build the Android companion
 
 The GitHub Actions workflow **Build Android monitor APK** builds a debug APK
-whenever `android-monitor/` changes. Download the
-`cloud-in-buzunar-monitor-debug` artifact from the completed workflow run and
-install `app-debug.apk` on the server phone.
+whenever `android-monitor/` changes. The newest development build is published
+as a rolling GitHub Release and can be downloaded without signing in:
+
+[Download CloudInBuzunar Monitor for Android](https://github.com/clementinny/cloud-in-buzunar/releases/download/android-monitor-latest/cloud-in-buzunar-monitor.apk)
 
 After installation:
 

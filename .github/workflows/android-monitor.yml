@@ -3,12 +3,14 @@ name: Build Android monitor APK
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - "android-monitor/**"
       - ".github/workflows/android-monitor.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -29,6 +31,12 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Keep a stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: cloud-in-buzunar-monitor-debug-key-v1
+
       - name: Build debug APK
         working-directory: android-monitor
         run: gradle --no-daemon assembleDebug
@@ -39,3 +47,23 @@ jobs:
           name: cloud-in-buzunar-monitor-debug
           path: android-monitor/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish rolling APK release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android-monitor/app/build/outputs/apk/debug/app-debug.apk \
+            cloud-in-buzunar-monitor.apk
+
+          if gh release view android-monitor-latest >/dev/null 2>&1; then
+            gh release upload android-monitor-latest \
+              cloud-in-buzunar-monitor.apk --clobber
+          else
+            gh release create android-monitor-latest \
+              cloud-in-buzunar-monitor.apk \
+              --target "$GITHUB_SHA" \
+              --title "CloudInBuzunar Monitor Android" \
+              --notes "Development APK for the native monitor companion." \
+              --prerelease
+          fi

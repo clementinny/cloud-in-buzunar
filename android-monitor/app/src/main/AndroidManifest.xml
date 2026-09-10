@@ -19,6 +19,7 @@
         android:required="true" />
 
     <application
+        android:name=".MonitorApplication"
         android:allowBackup="false"
         android:label="CloudInBuzunar Monitor"
         android:theme="@style/Theme.CloudInBuzunarMonitor"

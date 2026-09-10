@@ -12,6 +12,7 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.util.Log;
 
 import org.json.JSONObject;
 import org.webrtc.AudioSource;
@@ -45,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class MonitorService extends Service {
+    private static final String LOG_TAG = "CloudMonitor";
     static final String ACTION_ARM = "ro.cloudinbuzunar.monitor.ARM";
     static final String ACTION_DISARM = "ro.cloudinbuzunar.monitor.DISARM";
     static final String STATUS_ACTION = "ro.cloudinbuzunar.monitor.STATUS";
@@ -251,8 +253,19 @@ public final class MonitorService extends Service {
                 "live",
                 "Camera și microfonul sunt active. Se așteaptă PC-ul."
             );
-        } catch (Exception error) {
-            cleanupCapture();
+        } catch (Throwable error) {
+            if (error instanceof VirtualMachineError) {
+                throw (VirtualMachineError) error;
+            }
+
+            Log.e(LOG_TAG, "Monitor capture failed", error);
+
+            try {
+                cleanupCapture();
+            } catch (Throwable cleanupError) {
+                Log.e(LOG_TAG, "Monitor cleanup failed", cleanupError);
+            }
+
             state = "error";
             errorMessage = safeMessage(error);
             publishState("error", "Pornirea a eșuat: " + errorMessage);
@@ -668,7 +681,7 @@ public final class MonitorService extends Service {
         stopSelf();
     }
 
-    private String safeMessage(Exception error) {
+    private String safeMessage(Throwable error) {
         String message = error.getMessage();
         return message == null ? error.getClass().getSimpleName() : message;
     }

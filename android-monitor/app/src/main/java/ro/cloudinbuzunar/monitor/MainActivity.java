@@ -66,6 +66,14 @@ public final class MainActivity extends Activity {
         statusText = findViewById(R.id.deviceStatus);
         messageText = findViewById(R.id.messageText);
 
+        String previousCrash = CrashReporter.consume(this);
+
+        if (previousCrash != null) {
+            messageText.setText(
+                "Aplicația s-a oprit anterior: " + previousCrash
+            );
+        }
+
         ArrayAdapter<String> cameraAdapter = new ArrayAdapter<>(
             this,
             android.R.layout.simple_spinner_dropdown_item,
