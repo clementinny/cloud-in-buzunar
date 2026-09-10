@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/monitor.css') }}?v=4"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=5"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/monitor.js') }}?v=4"
+        src="{{ url_for('static', filename='js/monitor.js') }}?v=5"
     ></script>
 </head>
 
@@ -131,6 +131,56 @@
                 >
                     Oprește camera și microfonul
                 </button>
+            </div>
+        </section>
+
+        <section class="monitor-recording-panel">
+            <div class="monitor-recording-heading">
+                <div>
+                    <h2>Înregistrări</h2>
+                    <p id="recording-status">
+                        Se verifică starea înregistrării...
+                    </p>
+                </div>
+
+                <div class="monitor-recording-controls">
+                    <label>
+                        Mod
+                        <select id="recording-mode" disabled>
+                            <option value="off">Oprit</option>
+                            <option value="audio">Doar microfon</option>
+                            <option value="video">Video + microfon · 480p</option>
+                        </select>
+                    </label>
+
+                    <label>
+                        Păstrează
+                        <select id="recording-retention" disabled>
+                            <option value="24">24 de ore</option>
+                            <option value="48" selected>48 de ore</option>
+                        </select>
+                    </label>
+
+                    <button id="apply-recording-button" type="button" disabled>
+                        Aplică
+                    </button>
+                </div>
+            </div>
+
+            <p class="monitor-recording-note">
+                Segmente de 10 minute, salvate pe telefon. Modurile de
+                înregistrare și transmisia live nu rulează simultan.
+            </p>
+
+            <div class="monitor-recording-summary">
+                <strong id="recording-count">0 înregistrări</strong>
+                <span id="recording-storage">0 B ocupați</span>
+            </div>
+
+            <div id="recording-list" class="monitor-recording-list">
+                <p class="monitor-recording-empty">
+                    Nu există încă înregistrări.
+                </p>
             </div>
         </section>
 

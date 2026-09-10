@@ -1,5 +1,7 @@
+import io
 import os
 import tempfile
+import time
 import unittest
 
 
@@ -98,6 +100,84 @@ class MonitorDevicePairingTest(unittest.TestCase):
             poll_response.get_json()["camera_facing"],
             "user",
         )
+
+        stop_live_response = admin_client.post(
+            "/api/monitor/control",
+            json={"state": "armed"},
+        )
+        self.assertEqual(stop_live_response.status_code, 200)
+
+        recording_response = admin_client.post(
+            "/api/monitor/recordings/control",
+            json={
+                "mode": "audio",
+                "retention_hours": 48,
+                "camera_facing": "environment",
+            },
+        )
+        self.assertEqual(recording_response.status_code, 200)
+        self.assertEqual(
+            recording_response.get_json()["desired_mode"],
+            "audio",
+        )
+
+        recording_poll = device_client.post(
+            "/api/monitor/source/poll",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "source_id": source_id,
+                "actual_state": "armed",
+                "recording_mode": "audio",
+            },
+        )
+        self.assertEqual(recording_poll.status_code, 200)
+        self.assertEqual(
+            recording_poll.get_json()["recording_mode"],
+            "audio",
+        )
+
+        blocked_live_response = admin_client.post(
+            "/api/monitor/control",
+            json={
+                "state": "live",
+                "camera_facing": "environment",
+            },
+        )
+        self.assertEqual(blocked_live_response.status_code, 409)
+
+        recording_end_ms = int(time.time() * 1000)
+        recording_start_ms = recording_end_ms - 10 * 60 * 1000
+
+        upload_response = device_client.post(
+            "/api/monitor/recordings",
+            headers={"Authorization": f"Bearer {token}"},
+            data={
+                "mode": "audio",
+                "camera_facing": "",
+                "started_at_ms": str(recording_start_ms),
+                "ended_at_ms": str(recording_end_ms),
+                "recording": (
+                    io.BytesIO(b"test-aac-segment"),
+                    "segment.m4a",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(upload_response.status_code, 201)
+        recording_id = upload_response.get_json()["id"]
+
+        recording_list = admin_client.get(
+            "/api/monitor/recordings"
+        )
+        self.assertEqual(recording_list.status_code, 200)
+        self.assertEqual(recording_list.get_json()["count"], 1)
+
+        playback_response = admin_client.get(
+            f"/api/monitor/recordings/{recording_id}"
+        )
+        self.assertEqual(playback_response.status_code, 200)
+        self.assertEqual(playback_response.data, b"test-aac-segment")
+        playback_response.close()
 
         rejected_response = device_client.post(
             "/api/monitor/source/poll",

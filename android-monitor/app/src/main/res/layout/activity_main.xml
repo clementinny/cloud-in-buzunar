@@ -162,7 +162,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="22dp"
-            android:text="Android păstrează o notificare vizibilă cât timp sursa este armată și reface serviciul dacă procesul este eliberat. Indicatorii de confidențialitate apar când camera sau microfonul sunt active. Oprirea forțată sau repornirea telefonului necesită o nouă armare."
+            android:text="Android păstrează o notificare vizibilă cât timp sursa este armată și reface serviciul dacă procesul este eliberat. Când înregistrarea este activă, notificarea și indicatorii de confidențialitate rămân vizibili. Oprirea forțată sau repornirea telefonului necesită o nouă armare."
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
     </LinearLayout>

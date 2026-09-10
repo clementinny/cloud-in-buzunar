@@ -8,6 +8,9 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.SurfaceTexture;
+import android.hardware.Camera;
+import android.media.MediaRecorder;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -37,10 +40,12 @@ import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 
 import java.util.Collections;
+import java.io.File;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -56,6 +61,7 @@ public final class MonitorService extends Service {
 
     private static final String CHANNEL_ID = "cloud_monitor";
     private static final int NOTIFICATION_ID = 4102;
+    private static final long RECORDING_SEGMENT_MILLIS = 10 * 60 * 1000L;
 
     static volatile String currentState = "stopped";
     static volatile String currentMessage = null;
@@ -86,6 +92,15 @@ public final class MonitorService extends Service {
     private String monitorSessionId;
     private boolean answerApplied;
     private CountDownLatch iceGatheringLatch;
+
+    private MediaRecorder segmentRecorder;
+    private Camera segmentCamera;
+    private SurfaceTexture segmentPreviewTexture;
+    private File segmentFile;
+    private long segmentStartedAt;
+    private String desiredRecordingMode = "off";
+    private String actualRecordingMode = "off";
+    private ScheduledFuture<?> recordingRotation;
 
     @Override
     public void onCreate() {
@@ -145,6 +160,7 @@ public final class MonitorService extends Service {
     @Override
     public void onDestroy() {
         armed = false;
+        stopLocalRecording(false);
         cleanupCapture();
         releaseLocks();
         executor.shutdownNow();
@@ -175,6 +191,7 @@ public final class MonitorService extends Service {
             state = "armed";
             errorMessage = null;
             acquireWakeLock();
+            uploadPendingRecordings();
             publishState(
                 "armed",
                 "Așteaptă comanda din dashboard. Ecranul poate fi stins."
@@ -196,8 +213,17 @@ public final class MonitorService extends Service {
         }
 
         try {
-            JSONObject response = api.poll(sourceId, state, errorMessage);
+            JSONObject response = api.poll(
+                sourceId,
+                state,
+                errorMessage,
+                actualRecordingMode
+            );
             String desiredState = response.getString("desired_state");
+            desiredRecordingMode = response.optString(
+                "recording_mode",
+                "off"
+            );
             String requestedCameraFacing = response.optString(
                 "camera_facing",
                 cameraFacing
@@ -214,13 +240,21 @@ public final class MonitorService extends Service {
             }
 
             if ("live".equals(desiredState)) {
+                if (!"off".equals(actualRecordingMode)) {
+                    stopLocalRecording(true);
+                }
+
                 if ("armed".equals(state) && !captureStarting) {
                     startCapture();
                 } else if ("live".equals(state)) {
                     maintainLiveSession();
                 }
-            } else if (!"armed".equals(state)) {
-                stopCapture(true);
+            } else {
+                if (!"armed".equals(state)) {
+                    stopCapture(true);
+                }
+
+                reconcileLocalRecording(desiredRecordingMode);
             }
         } catch (ApiClient.ApiException error) {
             if (error.status == 401 || error.status == 404) {
@@ -236,6 +270,10 @@ public final class MonitorService extends Service {
     }
 
     private void startCapture() {
+        if (!"off".equals(actualRecordingMode)) {
+            stopLocalRecording(true);
+        }
+
         captureStarting = true;
         state = "starting";
         errorMessage = null;
@@ -365,9 +403,346 @@ public final class MonitorService extends Service {
         }
     }
 
+    private void reconcileLocalRecording(String requestedMode) {
+        String safeMode = "audio".equals(requestedMode)
+            || "video".equals(requestedMode)
+            ? requestedMode
+            : "off";
+
+        if (safeMode.equals(actualRecordingMode)) {
+            return;
+        }
+
+        if (!"off".equals(actualRecordingMode)) {
+            stopLocalRecording(true);
+        }
+
+        if (!"off".equals(safeMode)) {
+            startLocalRecording(safeMode);
+        }
+    }
+
+    private void startLocalRecording(String mode) {
+        try {
+            File queueDirectory = recordingQueueDirectory();
+            discardInterruptedSegments(queueDirectory);
+            segmentStartedAt = System.currentTimeMillis();
+            segmentFile = new File(
+                queueDirectory,
+                "current-" + mode + ".part"
+            );
+            segmentFile.delete();
+            segmentRecorder = createMediaRecorder();
+
+            if ("video".equals(mode)) {
+                configureVideoRecorder(segmentRecorder);
+            } else {
+                configureAudioRecorder(segmentRecorder);
+            }
+
+            segmentRecorder.setOutputFile(segmentFile.getAbsolutePath());
+            segmentRecorder.prepare();
+            segmentRecorder.start();
+            actualRecordingMode = mode;
+            MonitorStateStore.updateRecordingMode(this, mode);
+            scheduleRecordingRotation();
+            publishState(
+                "armed",
+                "audio".equals(mode)
+                    ? "REC · se înregistrează numai sunetul"
+                    : "REC · se înregistrează video și sunet la 480p"
+            );
+        } catch (Exception error) {
+            Log.e(LOG_TAG, "Local recording could not start", error);
+            releaseSegmentRecorder();
+            releaseSegmentCamera();
+
+            if (segmentFile != null) {
+                segmentFile.delete();
+            }
+
+            segmentFile = null;
+            actualRecordingMode = "off";
+            MonitorStateStore.updateRecordingMode(this, "off");
+            publishTransientError(
+                "Înregistrarea nu a pornit: " + safeMessage(error)
+            );
+        }
+    }
+
+    private MediaRecorder createMediaRecorder() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return new MediaRecorder(this);
+        }
+
+        return new MediaRecorder();
+    }
+
+    private void configureAudioRecorder(MediaRecorder recorder) {
+        recorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        recorder.setAudioChannels(1);
+        recorder.setAudioSamplingRate(16000);
+        recorder.setAudioEncodingBitRate(24000);
+    }
+
+    private void configureVideoRecorder(MediaRecorder recorder)
+        throws Exception {
+        int cameraId = findRecordingCameraId(cameraFacing);
+        Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
+        Camera.getCameraInfo(cameraId, cameraInfo);
+        segmentCamera = Camera.open(cameraId);
+        segmentPreviewTexture = new SurfaceTexture(4102);
+        segmentCamera.setPreviewTexture(segmentPreviewTexture);
+        segmentCamera.startPreview();
+        segmentCamera.unlock();
+
+        recorder.setCamera(segmentCamera);
+        recorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        recorder.setAudioChannels(1);
+        recorder.setAudioSamplingRate(16000);
+        recorder.setAudioEncodingBitRate(24000);
+        recorder.setVideoSize(640, 480);
+        recorder.setVideoFrameRate(15);
+        recorder.setVideoEncodingBitRate(600000);
+        recorder.setOrientationHint(
+            cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT
+                ? 270
+                : 90
+        );
+    }
+
+    private int findRecordingCameraId(String requestedFacing) {
+        int requested = "user".equals(requestedFacing)
+            ? Camera.CameraInfo.CAMERA_FACING_FRONT
+            : Camera.CameraInfo.CAMERA_FACING_BACK;
+        Camera.CameraInfo info = new Camera.CameraInfo();
+
+        for (int cameraId = 0; cameraId < Camera.getNumberOfCameras(); cameraId++) {
+            Camera.getCameraInfo(cameraId, info);
+
+            if (info.facing == requested) {
+                return cameraId;
+            }
+        }
+
+        if (Camera.getNumberOfCameras() == 0) {
+            throw new IllegalStateException("Telefonul nu are cameră disponibilă");
+        }
+
+        return 0;
+    }
+
+    private void scheduleRecordingRotation() {
+        if (recordingRotation != null) {
+            recordingRotation.cancel(false);
+        }
+
+        recordingRotation = executor.schedule(
+            this::rotateLocalRecording,
+            RECORDING_SEGMENT_MILLIS,
+            TimeUnit.MILLISECONDS
+        );
+    }
+
+    private void rotateLocalRecording() {
+        String mode = actualRecordingMode;
+        stopLocalRecording(true);
+
+        if (
+            armed
+            && "armed".equals(state)
+            && mode.equals(desiredRecordingMode)
+        ) {
+            startLocalRecording(mode);
+        }
+    }
+
+    private void stopLocalRecording(boolean uploadCompletedSegment) {
+        if (recordingRotation != null) {
+            recordingRotation.cancel(false);
+            recordingRotation = null;
+        }
+
+        String completedMode = actualRecordingMode;
+        long endedAt = System.currentTimeMillis();
+        boolean completed = false;
+
+        if (segmentRecorder != null) {
+            try {
+                segmentRecorder.stop();
+                completed = true;
+            } catch (RuntimeException error) {
+                Log.w(LOG_TAG, "Recording segment was too short", error);
+            }
+        }
+
+        releaseSegmentRecorder();
+        releaseSegmentCamera();
+        actualRecordingMode = "off";
+        MonitorStateStore.updateRecordingMode(this, "off");
+
+        File completedFile = null;
+
+        if (segmentFile != null && completed && segmentFile.length() > 0) {
+            String extension = "audio".equals(completedMode) ? ".m4a" : ".mp4";
+            String modeToken = "video".equals(completedMode)
+                ? "video-" + cameraFacing
+                : "audio";
+            completedFile = new File(
+                segmentFile.getParentFile(),
+                modeToken + "_" + segmentStartedAt + "_" + endedAt
+                    + extension
+            );
+
+            if (!segmentFile.renameTo(completedFile)) {
+                Log.e(LOG_TAG, "Could not finalize recording segment");
+                completedFile = null;
+            }
+        }
+
+        if (segmentFile != null && segmentFile.exists()) {
+            segmentFile.delete();
+        }
+
+        segmentFile = null;
+
+        if (uploadCompletedSegment && completedFile != null) {
+            uploadRecordingFile(completedFile);
+        }
+
+        if (armed && "armed".equals(state)) {
+            publishState(
+                "armed",
+                "Camera și microfonul sunt oprite. Sursa rămâne armată."
+            );
+        }
+    }
+
+    private void releaseSegmentRecorder() {
+        if (segmentRecorder == null) {
+            return;
+        }
+
+        try {
+            segmentRecorder.reset();
+        } catch (RuntimeException ignored) {
+            // Release still needs to run after an incomplete recording.
+        }
+
+        segmentRecorder.release();
+        segmentRecorder = null;
+    }
+
+    private void releaseSegmentCamera() {
+        if (segmentCamera != null) {
+            try {
+                segmentCamera.lock();
+            } catch (RuntimeException ignored) {
+                // The recorder may already have returned camera ownership.
+            }
+
+            segmentCamera.release();
+            segmentCamera = null;
+        }
+
+        if (segmentPreviewTexture != null) {
+            segmentPreviewTexture.release();
+            segmentPreviewTexture = null;
+        }
+    }
+
+    private File recordingQueueDirectory() {
+        File directory = new File(getFilesDir(), "recording-queue");
+
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IllegalStateException(
+                "Spațiul temporar pentru înregistrări nu poate fi creat"
+            );
+        }
+
+        return directory;
+    }
+
+    private void discardInterruptedSegments(File directory) {
+        File[] files = directory.listFiles(
+            (ignored, name) -> name.endsWith(".part")
+        );
+
+        if (files == null) {
+            return;
+        }
+
+        for (File file : files) {
+            file.delete();
+        }
+    }
+
+    private void uploadPendingRecordings() {
+        File directory;
+
+        try {
+            directory = recordingQueueDirectory();
+        } catch (RuntimeException error) {
+            Log.e(LOG_TAG, "Recording queue is unavailable", error);
+            return;
+        }
+
+        discardInterruptedSegments(directory);
+        File[] files = directory.listFiles(
+            (ignored, name) -> name.endsWith(".m4a") || name.endsWith(".mp4")
+        );
+
+        if (files == null) {
+            return;
+        }
+
+        for (File file : files) {
+            uploadRecordingFile(file);
+        }
+    }
+
+    private void uploadRecordingFile(File file) {
+        String[] parts = file.getName().split("[_\\.]");
+
+        if (parts.length != 4) {
+            file.delete();
+            return;
+        }
+
+        try {
+            String modeToken = parts[0];
+            String mode = modeToken.startsWith("video-")
+                ? "video"
+                : "audio";
+            String recordedCameraFacing = modeToken.endsWith("-user")
+                ? "user"
+                : "environment";
+            long startedAt = Long.parseLong(parts[1]);
+            long endedAt = Long.parseLong(parts[2]);
+            api.uploadRecording(
+                file,
+                mode,
+                "video".equals(mode) ? recordedCameraFacing : null,
+                startedAt,
+                endedAt
+            );
+            file.delete();
+        } catch (Exception error) {
+            Log.e(LOG_TAG, "Recording upload will be retried", error);
+        }
+    }
+
     private void disarmAndStop() {
         MonitorStateStore.disarm(this);
         armed = false;
+        desiredRecordingMode = "off";
+        stopLocalRecording(true);
         cleanupCapture();
 
         if (api != null && sourceId != null) {
@@ -719,6 +1094,8 @@ public final class MonitorService extends Service {
         errorMessage = message;
         publishState("error", message);
         armed = false;
+        desiredRecordingMode = "off";
+        stopLocalRecording(false);
         cleanupCapture();
         releaseLocks();
         stopForeground(STOP_FOREGROUND_REMOVE);

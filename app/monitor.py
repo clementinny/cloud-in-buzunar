@@ -2,7 +2,10 @@ import json
 import hashlib
 import re
 import secrets
+import uuid
+from datetime import datetime, timedelta, timezone
 from functools import wraps
+from pathlib import Path
 
 from flask import (
     Blueprint,
@@ -10,6 +13,7 @@ from flask import (
     jsonify,
     render_template,
     request,
+    send_file,
     session,
 )
 
@@ -19,12 +23,20 @@ from app.database import (
     clear_monitor_session,
     create_monitor_session,
     create_monitor_pairing_code,
+    create_monitor_recording,
     consume_monitor_pairing_code,
+    delete_expired_monitor_recordings,
+    delete_monitor_recording,
     find_user_by_id,
     find_monitor_device_by_token_hash,
+    find_monitor_recording,
     get_active_monitor_source,
     get_active_monitor_session,
+    get_monitor_recording_settings,
+    list_monitor_recordings,
     set_monitor_source_desired_state,
+    set_monitor_recording_actual_mode,
+    set_monitor_recording_settings,
     set_monitor_answer,
     touch_monitor_session,
     touch_monitor_viewer_session,
@@ -38,6 +50,12 @@ SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 MAXIMUM_SDP_LENGTH = 200_000
 SOURCE_STATES = {"armed", "starting", "live", "error"}
 PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+RECORDING_MODES = {"off", "audio", "video"}
+RECORDING_RETENTION_HOURS = {24, 48}
+DATA_DIR = Path.home() / "cloud-in-buzunar-data"
+MONITOR_RECORDING_DIR = DATA_DIR / "monitor-recordings"
+MONITOR_RECORDING_DIR.mkdir(parents=True, exist_ok=True)
+MONITOR_RECORDING_DIR.chmod(0o700)
 
 
 def get_session_user():
@@ -172,6 +190,50 @@ def read_json_description(value):
     return description
 
 
+def serialize_recording(recording):
+    return {
+        "id": recording["id"],
+        "mode": recording["mode"],
+        "camera_facing": recording["camera_facing"],
+        "started_at": recording["started_at"],
+        "ended_at": recording["ended_at"],
+        "size_bytes": recording["size_bytes"],
+        "play_url": (
+            f"/api/monitor/recordings/{recording['id']}"
+        ),
+    }
+
+
+def prune_monitor_recordings(retention_hours=None):
+    if retention_hours is None:
+        settings = get_monitor_recording_settings()
+        retention_hours = settings["retention_hours"]
+
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(hours=retention_hours)
+    ).isoformat()
+    expired = delete_expired_monitor_recordings(cutoff)
+
+    for recording in expired:
+        (MONITOR_RECORDING_DIR / recording["file_name"]).unlink(
+            missing_ok=True
+        )
+
+
+def parse_recording_timestamp(value, field_name):
+    try:
+        milliseconds = int(value)
+        timestamp = datetime.fromtimestamp(
+            milliseconds / 1000,
+            timezone.utc,
+        )
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(f"Invalid {field_name}") from error
+
+    return timestamp
+
+
 @monitor_blueprint.get("/monitor")
 def monitor_page():
     return render_template("monitor.html")
@@ -259,12 +321,18 @@ def monitor_pair_device():
 def monitor_status():
     monitor_source = get_active_monitor_source()
     monitor_session = get_active_monitor_session()
+    recording_settings = get_monitor_recording_settings()
 
     response = {
         "armed": monitor_source is not None,
         "active": monitor_session is not None,
         "source_state": None,
         "source_error": None,
+        "recording": {
+            "desired_mode": recording_settings["desired_mode"],
+            "actual_mode": recording_settings["actual_mode"],
+            "retention_hours": recording_settings["retention_hours"],
+        },
     }
 
     if monitor_source is not None:
@@ -357,6 +425,10 @@ def monitor_source_poll():
         return jsonify({"error": "Invalid source state"}), 400
 
     error_message = payload.get("error")
+    recording_mode = payload.get("recording_mode", "off")
+
+    if recording_mode not in RECORDING_MODES:
+        return jsonify({"error": "Invalid recording mode"}), 400
 
     if error_message is not None:
         if not isinstance(error_message, str):
@@ -374,11 +446,16 @@ def monitor_source_poll():
     if source is None:
         return jsonify({"armed": False}), 404
 
+    set_monitor_recording_actual_mode(recording_mode)
+    recording_settings = get_monitor_recording_settings()
+
     return jsonify(
         {
             "armed": True,
             "desired_state": source["desired_state"],
             "camera_facing": source["camera_facing"],
+            "recording_mode": recording_settings["desired_mode"],
+            "retention_hours": recording_settings["retention_hours"],
         }
     )
 
@@ -421,6 +498,23 @@ def monitor_control():
     if desired_state not in {"armed", "live"}:
         return jsonify({"error": "Invalid desired state"}), 400
 
+    recording_settings = get_monitor_recording_settings()
+
+    if (
+        desired_state == "live"
+        and (
+            recording_settings["desired_mode"] != "off"
+            or recording_settings["actual_mode"] != "off"
+        )
+    ):
+        return jsonify(
+            {
+                "error": (
+                    "Oprește înregistrarea înainte de transmisia live"
+                )
+            }
+        ), 409
+
     camera_facing = payload.get("camera_facing")
 
     if camera_facing is not None and camera_facing not in {
@@ -444,6 +538,187 @@ def monitor_control():
             "camera_facing": source["camera_facing"],
         }
     )
+
+
+@monitor_blueprint.post("/api/monitor/recordings/control")
+@require_monitor_admin
+def monitor_recording_control():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    mode = payload.get("mode")
+    retention_hours = payload.get("retention_hours")
+    camera_facing = payload.get("camera_facing")
+
+    if mode not in RECORDING_MODES:
+        return jsonify({"error": "Invalid recording mode"}), 400
+
+    if retention_hours not in RECORDING_RETENTION_HOURS:
+        return jsonify({"error": "Invalid recording retention"}), 400
+
+    if camera_facing not in {"environment", "user"}:
+        return jsonify({"error": "Invalid camera selection"}), 400
+
+    source = get_active_monitor_source()
+
+    if source is None:
+        return jsonify({"error": "No armed source available"}), 404
+
+    if mode != "off" and (
+        source["desired_state"] == "live"
+        or source["actual_state"] in {"starting", "live"}
+    ):
+        return jsonify(
+            {
+                "error": (
+                    "Oprește transmisia live înainte de înregistrare"
+                )
+            }
+        ), 409
+
+    set_monitor_source_desired_state("armed", camera_facing)
+    settings = set_monitor_recording_settings(mode, retention_hours)
+    prune_monitor_recordings(retention_hours)
+
+    return jsonify(
+        {
+            "desired_mode": settings["desired_mode"],
+            "actual_mode": settings["actual_mode"],
+            "retention_hours": settings["retention_hours"],
+            "camera_facing": camera_facing,
+        }
+    )
+
+
+@monitor_blueprint.post("/api/monitor/recordings")
+@require_monitor_source
+def monitor_upload_recording():
+    uploaded_file = request.files.get("recording")
+    mode = request.form.get("mode")
+    camera_facing = request.form.get("camera_facing") or None
+
+    if uploaded_file is None:
+        return jsonify({"error": "Missing recording file"}), 400
+
+    if mode not in {"audio", "video"}:
+        return jsonify({"error": "Invalid recording mode"}), 400
+
+    if mode == "video" and camera_facing not in {
+        "environment",
+        "user",
+    }:
+        return jsonify({"error": "Invalid camera selection"}), 400
+
+    if mode == "audio":
+        camera_facing = None
+
+    try:
+        started_at = parse_recording_timestamp(
+            request.form.get("started_at_ms"),
+            "recording start",
+        )
+        ended_at = parse_recording_timestamp(
+            request.form.get("ended_at_ms"),
+            "recording end",
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    duration = (ended_at - started_at).total_seconds()
+
+    if duration < 0 or duration > 15 * 60:
+        return jsonify({"error": "Invalid recording duration"}), 400
+
+    extension = ".m4a" if mode == "audio" else ".mp4"
+    timestamp = started_at.strftime("%Y%m%dT%H%M%SZ")
+    file_name = f"{timestamp}-{uuid.uuid4().hex}{extension}"
+    final_path = MONITOR_RECORDING_DIR / file_name
+    temporary_path = MONITOR_RECORDING_DIR / f".{file_name}.part"
+
+    try:
+        uploaded_file.save(temporary_path)
+        size_bytes = temporary_path.stat().st_size
+
+        if size_bytes == 0:
+            temporary_path.unlink(missing_ok=True)
+            return jsonify({"error": "Recording is empty"}), 400
+
+        temporary_path.replace(final_path)
+        recording_id = create_monitor_recording(
+            g.monitor_source_user["id"],
+            mode,
+            camera_facing,
+            file_name,
+            started_at.isoformat(),
+            ended_at.isoformat(),
+            size_bytes,
+        )
+    except OSError:
+        temporary_path.unlink(missing_ok=True)
+        final_path.unlink(missing_ok=True)
+        return jsonify({"error": "Recording could not be stored"}), 500
+
+    recording = find_monitor_recording(recording_id)
+    response = serialize_recording(recording)
+    prune_monitor_recordings()
+    return jsonify(response), 201
+
+
+@monitor_blueprint.get("/api/monitor/recordings")
+@require_monitor_admin
+def monitor_list_recordings():
+    prune_monitor_recordings()
+    recordings = list_monitor_recordings()
+    total_size = sum(recording["size_bytes"] for recording in recordings)
+    return jsonify(
+        {
+            "count": len(recordings),
+            "size_bytes": total_size,
+            "recordings": [
+                serialize_recording(recording)
+                for recording in recordings
+            ],
+        }
+    )
+
+
+@monitor_blueprint.get("/api/monitor/recordings/<int:recording_id>")
+@require_monitor_admin
+def monitor_play_recording(recording_id):
+    recording = find_monitor_recording(recording_id)
+
+    if recording is None:
+        return jsonify({"error": "Recording not found"}), 404
+
+    recording_path = MONITOR_RECORDING_DIR / recording["file_name"]
+
+    if not recording_path.is_file():
+        return jsonify({"error": "Recording file not found"}), 404
+
+    mimetype = (
+        "audio/mp4" if recording["mode"] == "audio" else "video/mp4"
+    )
+    return send_file(
+        recording_path,
+        mimetype=mimetype,
+        conditional=True,
+    )
+
+
+@monitor_blueprint.delete("/api/monitor/recordings/<int:recording_id>")
+@require_monitor_admin
+def monitor_delete_recording(recording_id):
+    recording = delete_monitor_recording(recording_id)
+
+    if recording is None:
+        return jsonify({"error": "Recording not found"}), 404
+
+    (MONITOR_RECORDING_DIR / recording["file_name"]).unlink(
+        missing_ok=True
+    )
+    return jsonify({"deleted": recording_id})
 
 
 @monitor_blueprint.post("/api/monitor/offer")

@@ -151,6 +151,48 @@ ON monitor_devices (
 )
 """
 
+MONITOR_RECORDING_SETTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monitor_recording_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    desired_mode TEXT NOT NULL
+        CHECK (desired_mode IN ('off', 'audio', 'video')),
+    actual_mode TEXT NOT NULL
+        CHECK (actual_mode IN ('off', 'audio', 'video')),
+    retention_hours INTEGER NOT NULL
+        CHECK (retention_hours IN (24, 48)),
+    updated_at TEXT NOT NULL
+)
+"""
+
+MONITOR_RECORDING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monitor_recordings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('audio', 'video')),
+    camera_facing TEXT
+        CHECK (
+            camera_facing IS NULL
+            OR camera_facing IN ('environment', 'user')
+        ),
+    file_name TEXT NOT NULL UNIQUE,
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+)
+"""
+
+MONITOR_RECORDING_INDEX = """
+CREATE INDEX IF NOT EXISTS monitor_recordings_timeline
+ON monitor_recordings (
+    ended_at DESC,
+    id DESC
+)
+"""
+
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -177,6 +219,22 @@ def initialize_database():
         connection.execute(MONITOR_PAIRING_CODE_SCHEMA)
         connection.execute(MONITOR_DEVICE_SCHEMA)
         connection.execute(MONITOR_DEVICE_INDEX)
+        connection.execute(MONITOR_RECORDING_SETTINGS_SCHEMA)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO monitor_recording_settings (
+                id,
+                desired_mode,
+                actual_mode,
+                retention_hours,
+                updated_at
+            )
+            VALUES (1, 'off', 'off', 48, ?)
+            """,
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        connection.execute(MONITOR_RECORDING_SCHEMA)
+        connection.execute(MONITOR_RECORDING_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -975,9 +1033,234 @@ def clear_monitor_source(source_id, user_id):
 
         if cursor.rowcount > 0:
             connection.execute("DELETE FROM monitor_sessions")
+            connection.execute(
+                """
+                UPDATE monitor_recording_settings
+                SET
+                    desired_mode = 'off',
+                    actual_mode = 'off',
+                    updated_at = ?
+                WHERE id = 1
+                """,
+                (datetime.now(timezone.utc).isoformat(),),
+            )
 
         connection.commit()
         return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def get_monitor_recording_settings():
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                desired_mode,
+                actual_mode,
+                retention_hours,
+                updated_at
+            FROM monitor_recording_settings
+            WHERE id = 1
+            """
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def set_monitor_recording_settings(desired_mode, retention_hours):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE monitor_recording_settings
+            SET
+                desired_mode = ?,
+                retention_hours = ?,
+                updated_at = ?
+            WHERE id = 1
+            """,
+            (
+                desired_mode,
+                retention_hours,
+                now,
+            ),
+        )
+        connection.commit()
+        return get_monitor_recording_settings()
+    finally:
+        connection.close()
+
+
+def set_monitor_recording_actual_mode(actual_mode):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE monitor_recording_settings
+            SET
+                actual_mode = ?,
+                updated_at = ?
+            WHERE id = 1
+            """,
+            (
+                actual_mode,
+                now,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def create_monitor_recording(
+    user_id,
+    mode,
+    camera_facing,
+    file_name,
+    started_at,
+    ended_at,
+    size_bytes,
+):
+    created_at = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            INSERT INTO monitor_recordings (
+                user_id,
+                mode,
+                camera_facing,
+                file_name,
+                started_at,
+                ended_at,
+                size_bytes,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                mode,
+                camera_facing,
+                file_name,
+                started_at,
+                ended_at,
+                size_bytes,
+                created_at,
+            ),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    finally:
+        connection.close()
+
+
+def list_monitor_recordings(limit=300):
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                mode,
+                camera_facing,
+                file_name,
+                started_at,
+                ended_at,
+                size_bytes,
+                created_at
+            FROM monitor_recordings
+            ORDER BY ended_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def find_monitor_recording(recording_id):
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                mode,
+                camera_facing,
+                file_name,
+                started_at,
+                ended_at,
+                size_bytes,
+                created_at
+            FROM monitor_recordings
+            WHERE id = ?
+            """,
+            (recording_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def delete_monitor_recording(recording_id):
+    connection = open_database()
+
+    try:
+        recording = connection.execute(
+            """
+            SELECT id, file_name
+            FROM monitor_recordings
+            WHERE id = ?
+            """,
+            (recording_id,),
+        ).fetchone()
+
+        if recording is None:
+            return None
+
+        connection.execute(
+            "DELETE FROM monitor_recordings WHERE id = ?",
+            (recording_id,),
+        )
+        connection.commit()
+        return recording
+    finally:
+        connection.close()
+
+
+def delete_expired_monitor_recordings(cutoff):
+    connection = open_database()
+
+    try:
+        recordings = connection.execute(
+            """
+            SELECT id, file_name
+            FROM monitor_recordings
+            WHERE ended_at < ?
+            """,
+            (cutoff,),
+        ).fetchall()
+
+        if recordings:
+            connection.executemany(
+                "DELETE FROM monitor_recordings WHERE id = ?",
+                ((recording["id"],) for recording in recordings),
+            )
+
+        connection.commit()
+        return recordings
     finally:
         connection.close()
 

@@ -3,6 +3,9 @@ package ro.cloudinbuzunar.monitor;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -45,11 +48,13 @@ final class ApiClient {
     JSONObject poll(
         String sourceId,
         String actualState,
-        String errorMessage
+        String errorMessage,
+        String recordingMode
     ) throws Exception {
         JSONObject payload = new JSONObject()
             .put("source_id", sourceId)
-            .put("actual_state", actualState);
+            .put("actual_state", actualState)
+            .put("recording_mode", recordingMode);
 
         if (errorMessage != null) {
             payload.put("error", errorMessage);
@@ -60,6 +65,108 @@ final class ApiClient {
             "/api/monitor/source/poll",
             payload
         );
+    }
+
+    void uploadRecording(
+        File file,
+        String mode,
+        String cameraFacing,
+        long startedAt,
+        long endedAt
+    ) throws Exception {
+        String boundary = "CloudMonitor-" + System.nanoTime();
+        HttpURLConnection connection = (HttpURLConnection) new URL(
+            SERVER_URL + "/api/monitor/recordings"
+        ).openConnection();
+        connection.setRequestMethod("POST");
+        connection.setConnectTimeout(10000);
+        connection.setReadTimeout(120000);
+        connection.setDoOutput(true);
+        connection.setChunkedStreamingMode(256 * 1024);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Authorization", "Bearer " + token);
+        connection.setRequestProperty(
+            "Content-Type",
+            "multipart/form-data; boundary=" + boundary
+        );
+
+        try (DataOutputStream output = new DataOutputStream(
+            connection.getOutputStream()
+        )) {
+            writeFormField(output, boundary, "mode", mode);
+            writeFormField(
+                output,
+                boundary,
+                "camera_facing",
+                cameraFacing == null ? "" : cameraFacing
+            );
+            writeFormField(
+                output,
+                boundary,
+                "started_at_ms",
+                Long.toString(startedAt)
+            );
+            writeFormField(
+                output,
+                boundary,
+                "ended_at_ms",
+                Long.toString(endedAt)
+            );
+            output.writeBytes("--" + boundary + "\r\n");
+            output.writeBytes(
+                "Content-Disposition: form-data; name=\"recording\"; "
+                    + "filename=\"segment"
+                    + ("audio".equals(mode) ? ".m4a" : ".mp4")
+                    + "\"\r\n"
+            );
+            output.writeBytes(
+                "Content-Type: "
+                    + ("audio".equals(mode) ? "audio/mp4" : "video/mp4")
+                    + "\r\n\r\n"
+            );
+
+            try (FileInputStream input = new FileInputStream(file)) {
+                byte[] buffer = new byte[256 * 1024];
+                int count;
+
+                while ((count = input.read(buffer)) >= 0) {
+                    output.write(buffer, 0, count);
+                }
+            }
+
+            output.writeBytes("\r\n--" + boundary + "--\r\n");
+        }
+
+        int status = connection.getResponseCode();
+        InputStream stream = status >= 400
+            ? connection.getErrorStream()
+            : connection.getInputStream();
+        String responseText = readStream(stream);
+        connection.disconnect();
+
+        if (status < 200 || status >= 300) {
+            JSONObject response = responseText.isEmpty()
+                ? new JSONObject()
+                : new JSONObject(responseText);
+            throw new ApiException(
+                status,
+                response.optString("error", "Upload failed: HTTP " + status)
+            );
+        }
+    }
+
+    private static void writeFormField(
+        DataOutputStream output,
+        String boundary,
+        String name,
+        String value
+    ) throws Exception {
+        output.writeBytes("--" + boundary + "\r\n");
+        output.writeBytes(
+            "Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n"
+        );
+        output.write(value.getBytes(StandardCharsets.UTF_8));
+        output.writeBytes("\r\n");
     }
 
     void disarm(String sourceId) throws Exception {
