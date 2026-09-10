@@ -369,7 +369,18 @@ public final class MonitorService extends Service {
                 .createInitializationOptions()
         );
         eglBase = EglBase.create();
+
+        PeerConnectionFactory.Options options =
+            new PeerConnectionFactory.Options();
+
+        // The WebRTC network monitor aborts inside native code on this
+        // Android/Termux host. Signalling already travels through our HTTPS
+        // API, so disable continuous network-change monitoring while keeping
+        // the initial ICE interface discovery used by the peer connection.
+        options.disableNetworkMonitor = true;
+
         peerConnectionFactory = PeerConnectionFactory.builder()
+            .setOptions(options)
             .setVideoEncoderFactory(
                 new DefaultVideoEncoderFactory(
                     eglBase.getEglBaseContext(),
