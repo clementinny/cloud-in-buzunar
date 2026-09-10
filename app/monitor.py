@@ -195,6 +195,7 @@ def serialize_recording(recording):
         "id": recording["id"],
         "mode": recording["mode"],
         "camera_facing": recording["camera_facing"],
+        "container": recording["container"],
         "started_at": recording["started_at"],
         "ended_at": recording["ended_at"],
         "size_bytes": recording["size_bytes"],
@@ -332,6 +333,7 @@ def monitor_status():
             "desired_mode": recording_settings["desired_mode"],
             "actual_mode": recording_settings["actual_mode"],
             "retention_hours": recording_settings["retention_hours"],
+            "camera_facing": recording_settings["camera_facing"],
         },
     }
 
@@ -455,6 +457,9 @@ def monitor_source_poll():
             "desired_state": source["desired_state"],
             "camera_facing": source["camera_facing"],
             "recording_mode": recording_settings["desired_mode"],
+            "recording_camera_facing": recording_settings[
+                "camera_facing"
+            ],
             "retention_hours": recording_settings["retention_hours"],
         }
     )
@@ -497,23 +502,6 @@ def monitor_control():
 
     if desired_state not in {"armed", "live"}:
         return jsonify({"error": "Invalid desired state"}), 400
-
-    recording_settings = get_monitor_recording_settings()
-
-    if (
-        desired_state == "live"
-        and (
-            recording_settings["desired_mode"] != "off"
-            or recording_settings["actual_mode"] != "off"
-        )
-    ):
-        return jsonify(
-            {
-                "error": (
-                    "Oprește înregistrarea înainte de transmisia live"
-                )
-            }
-        ), 409
 
     camera_facing = payload.get("camera_facing")
 
@@ -578,8 +566,12 @@ def monitor_recording_control():
             }
         ), 409
 
-    set_monitor_source_desired_state("armed", camera_facing)
-    settings = set_monitor_recording_settings(mode, retention_hours)
+    set_monitor_source_desired_state("armed")
+    settings = set_monitor_recording_settings(
+        mode,
+        retention_hours,
+        camera_facing,
+    )
     prune_monitor_recordings(retention_hours)
 
     return jsonify(
@@ -587,7 +579,7 @@ def monitor_recording_control():
             "desired_mode": settings["desired_mode"],
             "actual_mode": settings["actual_mode"],
             "retention_hours": settings["retention_hours"],
-            "camera_facing": camera_facing,
+            "camera_facing": settings["camera_facing"],
         }
     )
 
@@ -598,12 +590,16 @@ def monitor_upload_recording():
     uploaded_file = request.files.get("recording")
     mode = request.form.get("mode")
     camera_facing = request.form.get("camera_facing") or None
+    container = request.form.get("container", "mp4")
 
     if uploaded_file is None:
         return jsonify({"error": "Missing recording file"}), 400
 
     if mode not in {"audio", "video"}:
         return jsonify({"error": "Invalid recording mode"}), 400
+
+    if container not in {"mp4", "webm"}:
+        return jsonify({"error": "Invalid recording container"}), 400
 
     if mode == "video" and camera_facing not in {
         "environment",
@@ -631,7 +627,10 @@ def monitor_upload_recording():
     if duration < 0 or duration > 15 * 60:
         return jsonify({"error": "Invalid recording duration"}), 400
 
-    extension = ".m4a" if mode == "audio" else ".mp4"
+    if container == "webm":
+        extension = ".webm"
+    else:
+        extension = ".m4a" if mode == "audio" else ".mp4"
     timestamp = started_at.strftime("%Y%m%dT%H%M%SZ")
     file_name = f"{timestamp}-{uuid.uuid4().hex}{extension}"
     final_path = MONITOR_RECORDING_DIR / file_name
@@ -654,6 +653,7 @@ def monitor_upload_recording():
             started_at.isoformat(),
             ended_at.isoformat(),
             size_bytes,
+            container,
         )
     except OSError:
         temporary_path.unlink(missing_ok=True)
@@ -697,9 +697,7 @@ def monitor_play_recording(recording_id):
     if not recording_path.is_file():
         return jsonify({"error": "Recording file not found"}), 404
 
-    mimetype = (
-        "audio/mp4" if recording["mode"] == "audio" else "video/mp4"
-    )
+    mimetype = f"{recording['mode']}/{recording['container']}"
     return send_file(
         recording_path,
         mimetype=mimetype,

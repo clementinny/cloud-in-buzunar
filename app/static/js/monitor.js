@@ -37,6 +37,9 @@ const recordingModeSelect = document.querySelector("#recording-mode");
 const recordingRetentionSelect = document.querySelector(
     "#recording-retention",
 );
+const recordingCameraFacingSelect = document.querySelector(
+    "#recording-camera-facing",
+);
 const applyRecordingButton = document.querySelector(
     "#apply-recording-button",
 );
@@ -54,7 +57,15 @@ let connectWhenReady = false;
 let cameraSelectionInitialized = false;
 let recordingSelectionInitialized = false;
 let recordingsTimer = null;
-let recordingIsBusy = false;
+let recordingArchiveMode = "off";
+let browserMediaRecorder = null;
+let browserRecordingChunks = [];
+let browserRecordingStartedAt = null;
+let browserRecordingMode = "off";
+let browserRecordingTimer = null;
+let browserRecordingStopPromise = null;
+
+const browserRecordingSegmentMilliseconds = 10 * 60 * 1000;
 
 
 async function readJsonResponse(response) {
@@ -121,32 +132,36 @@ function renderRecordingControls(data) {
         desired_mode: "off",
         actual_mode: "off",
         retention_hours: 48,
+        camera_facing: "environment",
     };
 
+    recordingArchiveMode = settings.desired_mode;
+
     if (!data.armed) {
-        recordingIsBusy = false;
         recordingStatus.textContent =
             "Armează aplicația Android pentru a înregistra.";
         recordingModeSelect.disabled = true;
         recordingRetentionSelect.disabled = true;
+        recordingCameraFacingSelect.disabled = true;
         applyRecordingButton.disabled = true;
         return;
     }
-
-    recordingIsBusy = (
-        settings.desired_mode !== "off"
-        || settings.actual_mode !== "off"
-    );
 
     if (!recordingSelectionInitialized) {
         recordingModeSelect.value = settings.desired_mode;
         recordingRetentionSelect.value = String(
             settings.retention_hours,
         );
+        recordingCameraFacingSelect.value =
+            settings.camera_facing ?? "environment";
         recordingSelectionInitialized = true;
     }
 
-    if (settings.desired_mode !== settings.actual_mode) {
+    if (data.active && settings.desired_mode !== "off") {
+        recordingStatus.textContent = settings.desired_mode === "audio"
+            ? "LIVE · sunetul transmis este arhivat în browser"
+            : "LIVE · transmisia video și audio este arhivată în browser";
+    } else if (settings.desired_mode !== settings.actual_mode) {
         recordingStatus.textContent = settings.desired_mode === "off"
             ? "Se oprește și se salvează segmentul curent..."
             : "Telefonul pregătește înregistrarea...";
@@ -159,10 +174,8 @@ function renderRecordingControls(data) {
     const controlsDisabled = !data.armed || data.active;
     recordingModeSelect.disabled = controlsDisabled;
     recordingRetentionSelect.disabled = controlsDisabled;
+    recordingCameraFacingSelect.disabled = controlsDisabled;
     applyRecordingButton.disabled = controlsDisabled;
-    cameraFacingSelect.disabled = (
-        controlsDisabled || recordingIsBusy
-    );
 }
 
 
@@ -243,6 +256,198 @@ async function loadRecordings() {
 }
 
 
+function browserRecordingMimeType(mode) {
+    const candidates = mode === "audio"
+        ? ["audio/webm;codecs=opus", "audio/webm"]
+        : ["video/webm;codecs=vp8,opus", "video/webm"];
+
+    return candidates.find((candidate) => (
+        MediaRecorder.isTypeSupported(candidate)
+    )) ?? "";
+}
+
+
+async function uploadBrowserRecording(
+    blob,
+    mode,
+    startedAt,
+    endedAt,
+) {
+    if (!blob.size) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("mode", mode);
+    formData.append("container", "webm");
+    formData.append(
+        "camera_facing",
+        mode === "video" ? cameraFacingSelect.value : "",
+    );
+    formData.append("started_at_ms", String(startedAt));
+    formData.append("ended_at_ms", String(endedAt));
+    formData.append(
+        "recording",
+        blob,
+        `monitor-${startedAt}.webm`,
+    );
+
+    const response = await fetch(
+        "/api/monitor/recordings",
+        {
+            method: "POST",
+            body: formData,
+        },
+    );
+    await readJsonResponse(response);
+    await loadRecordings();
+}
+
+
+function maybeStartBrowserRecording() {
+    if (
+        browserMediaRecorder
+        || browserRecordingStopPromise
+        || recordingArchiveMode === "off"
+        || !peerConnection
+        || !remoteVideo.srcObject
+    ) {
+        return;
+    }
+
+    if (typeof MediaRecorder === "undefined") {
+        showError(
+            "Browserul nu poate arhiva transmisia live. "
+            + "Înregistrarea locală va continua după oprirea live-ului.",
+        );
+        return;
+    }
+
+    const remoteStream = remoteVideo.srcObject;
+    const audioTracks = remoteStream.getAudioTracks();
+    const videoTracks = remoteStream.getVideoTracks();
+
+    if (audioTracks.length === 0) {
+        return;
+    }
+
+    if (recordingArchiveMode === "video" && videoTracks.length === 0) {
+        return;
+    }
+
+    const tracks = recordingArchiveMode === "audio"
+        ? audioTracks
+        : [...videoTracks, ...audioTracks];
+    const archiveStream = new MediaStream(tracks);
+    const mimeType = browserRecordingMimeType(recordingArchiveMode);
+    const options = recordingArchiveMode === "video"
+        ? {
+            videoBitsPerSecond: 600000,
+            audioBitsPerSecond: 24000,
+        }
+        : {audioBitsPerSecond: 24000};
+
+    if (mimeType) {
+        options.mimeType = mimeType;
+    }
+
+    try {
+        browserRecordingChunks = [];
+        browserRecordingStartedAt = Date.now();
+        browserRecordingMode = recordingArchiveMode;
+        browserMediaRecorder = new MediaRecorder(
+            archiveStream,
+            options,
+        );
+        browserMediaRecorder.addEventListener(
+            "dataavailable",
+            (event) => {
+                if (event.data.size > 0) {
+                    browserRecordingChunks.push(event.data);
+                }
+            },
+        );
+        browserMediaRecorder.start(5000);
+        browserRecordingTimer = window.setTimeout(() => {
+            stopBrowserRecordingSegment({restart: true}).catch((error) => {
+                showError(error.message);
+            });
+        }, browserRecordingSegmentMilliseconds);
+    } catch (error) {
+        browserMediaRecorder = null;
+        browserRecordingMode = "off";
+        showError(`Arhivarea transmisiei nu a pornit: ${error.message}`);
+    }
+}
+
+
+function stopBrowserRecordingSegment({restart = false} = {}) {
+    if (browserRecordingStopPromise) {
+        return browserRecordingStopPromise;
+    }
+
+    if (!browserMediaRecorder) {
+        return Promise.resolve();
+    }
+
+    if (browserRecordingTimer) {
+        window.clearTimeout(browserRecordingTimer);
+        browserRecordingTimer = null;
+    }
+
+    const recorder = browserMediaRecorder;
+
+    if (recorder.state === "inactive") {
+        browserMediaRecorder = null;
+        browserRecordingChunks = [];
+        browserRecordingStartedAt = null;
+        browserRecordingMode = "off";
+        return Promise.resolve();
+    }
+
+    const chunks = browserRecordingChunks;
+    const mode = browserRecordingMode;
+    const startedAt = browserRecordingStartedAt;
+    browserMediaRecorder = null;
+    browserRecordingStartedAt = null;
+    browserRecordingMode = "off";
+
+    browserRecordingStopPromise = new Promise((resolve, reject) => {
+        recorder.addEventListener("stop", async () => {
+            try {
+                const endedAt = Date.now();
+                const blob = new Blob(chunks, {
+                    type: recorder.mimeType || `${mode}/webm`,
+                });
+                await uploadBrowserRecording(
+                    blob,
+                    mode,
+                    startedAt,
+                    endedAt,
+                );
+                resolve();
+            } catch (error) {
+                reject(error);
+            } finally {
+                browserRecordingStopPromise = null;
+
+                if (
+                    restart
+                    && peerConnection
+                    && recordingArchiveMode === mode
+                ) {
+                    maybeStartBrowserRecording();
+                }
+            }
+        }, {once: true});
+
+        recorder.stop();
+    });
+
+    return browserRecordingStopPromise;
+}
+
+
 function waitForIceGatheringComplete(connection) {
     if (connection.iceGatheringState === "complete") {
         return Promise.resolve();
@@ -279,6 +484,10 @@ function waitForIceGatheringComplete(connection) {
 
 
 function closeViewerConnection(message = null) {
+    stopBrowserRecordingSegment().catch((error) => {
+        showError(error.message);
+    });
+
     if (viewerHeartbeatTimer) {
         window.clearInterval(viewerHeartbeatTimer);
         viewerHeartbeatTimer = null;
@@ -341,6 +550,7 @@ function updateConnectionState() {
         connectionStatus.textContent =
             "Conectat direct la camera telefonului.";
         liveBadge.hidden = false;
+        maybeStartBrowserRecording();
         return;
     }
 
@@ -380,19 +590,16 @@ async function connectToSource() {
     );
 
     connection.addEventListener("track", (event) => {
-        const [stream] = event.streams;
+        const currentStream = (
+            remoteVideo.srcObject
+            ?? new MediaStream()
+        );
 
-        if (stream) {
-            remoteVideo.srcObject = stream;
-        } else {
-            const currentStream = (
-                remoteVideo.srcObject
-                ?? new MediaStream()
-            );
-
+        if (!currentStream.getTracks().includes(event.track)) {
             currentStream.addTrack(event.track);
-            remoteVideo.srcObject = currentStream;
         }
+
+        remoteVideo.srcObject = currentStream;
 
         remoteVideo.hidden = false;
         placeholder.hidden = true;
@@ -401,6 +608,7 @@ async function connectToSource() {
             connectionStatus.textContent =
                 "Conectat. Apasă Play pentru a activa sunetul.";
         });
+        maybeStartBrowserRecording();
     });
 
     try {
@@ -499,9 +707,9 @@ async function loadMonitorStatus() {
     } else if (!data.active) {
         monitorStatus.textContent =
             `Sursă armată de ${ownerName} · camera este oprită`;
-        startRemoteButton.disabled = recordingIsBusy;
+        startRemoteButton.disabled = false;
         stopSourceButton.disabled = true;
-        cameraFacingSelect.disabled = recordingIsBusy;
+        cameraFacingSelect.disabled = false;
         connectButton.disabled = true;
         availableSession = null;
 
@@ -584,7 +792,7 @@ async function startRemoteCapture() {
     } catch (error) {
         connectWhenReady = false;
         showError(error.message);
-        startRemoteButton.disabled = recordingIsBusy;
+        startRemoteButton.disabled = false;
     }
 }
 
@@ -610,6 +818,7 @@ async function stopRemoteCapture({confirmAction = true} = {}) {
 
     try {
         await setRemoteCaptureState("armed");
+        await stopBrowserRecordingSegment();
         availableSession = null;
         closeViewerConnection(
             "Camera și microfonul au fost oprite. Sursa rămâne armată.",
@@ -668,7 +877,8 @@ applyRecordingButton.addEventListener("click", async () => {
                     retention_hours: Number(
                         recordingRetentionSelect.value,
                     ),
-                    camera_facing: cameraFacingSelect.value,
+                    camera_facing:
+                        recordingCameraFacingSelect.value,
                 }),
             },
         );
@@ -755,6 +965,8 @@ window.addEventListener("pagehide", () => {
     if (peerConnection) {
         peerConnection.close();
     }
+
+    stopBrowserRecordingSegment().catch(() => {});
 
     if (sourceIsArmed && (availableSession || connectedSessionId)) {
         fetch("/api/monitor/control", {

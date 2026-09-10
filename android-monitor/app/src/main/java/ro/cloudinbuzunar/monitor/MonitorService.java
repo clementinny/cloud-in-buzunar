@@ -72,6 +72,8 @@ public final class MonitorService extends Service {
     private ApiClient api;
     private String sourceId;
     private String cameraFacing = "environment";
+    private String recordingCameraFacing = "environment";
+    private String activeRecordingCameraFacing = "environment";
     private volatile String state = "armed";
     private volatile String errorMessage;
     private volatile boolean armed;
@@ -131,6 +133,8 @@ public final class MonitorService extends Service {
 
             if (!armed) {
                 cameraFacing = MonitorStateStore.cameraFacing(this);
+                recordingCameraFacing =
+                    MonitorStateStore.recordingCameraFacing(this);
                 startAsForeground(
                     "Se reface legătura · camera și microfonul sunt oprite"
                 );
@@ -228,6 +232,10 @@ public final class MonitorService extends Service {
                 "camera_facing",
                 cameraFacing
             );
+            String requestedRecordingCameraFacing = response.optString(
+                "recording_camera_facing",
+                recordingCameraFacing
+            );
 
             if (
                 "user".equals(requestedCameraFacing)
@@ -236,6 +244,22 @@ public final class MonitorService extends Service {
                 if (!requestedCameraFacing.equals(cameraFacing)) {
                     cameraFacing = requestedCameraFacing;
                     MonitorStateStore.updateCameraFacing(this, cameraFacing);
+                }
+            }
+
+            if (
+                "user".equals(requestedRecordingCameraFacing)
+                || "environment".equals(requestedRecordingCameraFacing)
+            ) {
+                if (!requestedRecordingCameraFacing.equals(
+                    recordingCameraFacing
+                )) {
+                    recordingCameraFacing =
+                        requestedRecordingCameraFacing;
+                    MonitorStateStore.updateRecordingCameraFacing(
+                        this,
+                        recordingCameraFacing
+                    );
                 }
             }
 
@@ -409,7 +433,16 @@ public final class MonitorService extends Service {
             ? requestedMode
             : "off";
 
-        if (safeMode.equals(actualRecordingMode)) {
+        boolean recordingCameraChanged = (
+            "video".equals(safeMode)
+            && "video".equals(actualRecordingMode)
+            && !recordingCameraFacing.equals(activeRecordingCameraFacing)
+        );
+
+        if (
+            safeMode.equals(actualRecordingMode)
+            && !recordingCameraChanged
+        ) {
             return;
         }
 
@@ -427,6 +460,7 @@ public final class MonitorService extends Service {
             File queueDirectory = recordingQueueDirectory();
             discardInterruptedSegments(queueDirectory);
             segmentStartedAt = System.currentTimeMillis();
+            activeRecordingCameraFacing = recordingCameraFacing;
             segmentFile = new File(
                 queueDirectory,
                 "current-" + mode + ".part"
@@ -489,7 +523,7 @@ public final class MonitorService extends Service {
 
     private void configureVideoRecorder(MediaRecorder recorder)
         throws Exception {
-        int cameraId = findRecordingCameraId(cameraFacing);
+        int cameraId = findRecordingCameraId(activeRecordingCameraFacing);
         Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
         Camera.getCameraInfo(cameraId, cameraInfo);
         segmentCamera = Camera.open(cameraId);
@@ -592,7 +626,7 @@ public final class MonitorService extends Service {
         if (segmentFile != null && completed && segmentFile.length() > 0) {
             String extension = "audio".equals(completedMode) ? ".m4a" : ".mp4";
             String modeToken = "video".equals(completedMode)
-                ? "video-" + cameraFacing
+                ? "video-" + activeRecordingCameraFacing
                 : "audio";
             completedFile = new File(
                 segmentFile.getParentFile(),

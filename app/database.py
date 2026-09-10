@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS monitor_recording_settings (
         CHECK (actual_mode IN ('off', 'audio', 'video')),
     retention_hours INTEGER NOT NULL
         CHECK (retention_hours IN (24, 48)),
+    camera_facing TEXT NOT NULL DEFAULT 'environment'
+        CHECK (camera_facing IN ('environment', 'user')),
     updated_at TEXT NOT NULL
 )
 """
@@ -178,6 +180,8 @@ CREATE TABLE IF NOT EXISTS monitor_recordings (
     started_at TEXT NOT NULL,
     ended_at TEXT NOT NULL,
     size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+    container TEXT NOT NULL DEFAULT 'mp4'
+        CHECK (container IN ('mp4', 'webm')),
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id)
         REFERENCES users(id)
@@ -220,6 +224,23 @@ def initialize_database():
         connection.execute(MONITOR_DEVICE_SCHEMA)
         connection.execute(MONITOR_DEVICE_INDEX)
         connection.execute(MONITOR_RECORDING_SETTINGS_SCHEMA)
+        recording_settings_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(monitor_recording_settings)"
+            )
+        }
+
+        if "camera_facing" not in recording_settings_columns:
+            connection.execute(
+                """
+                ALTER TABLE monitor_recording_settings
+                ADD COLUMN camera_facing TEXT NOT NULL
+                    DEFAULT 'environment'
+                    CHECK (camera_facing IN ('environment', 'user'))
+                """
+            )
+
         connection.execute(
             """
             INSERT OR IGNORE INTO monitor_recording_settings (
@@ -227,13 +248,31 @@ def initialize_database():
                 desired_mode,
                 actual_mode,
                 retention_hours,
+                camera_facing,
                 updated_at
             )
-            VALUES (1, 'off', 'off', 48, ?)
+            VALUES (1, 'off', 'off', 48, 'environment', ?)
             """,
             (datetime.now(timezone.utc).isoformat(),),
         )
         connection.execute(MONITOR_RECORDING_SCHEMA)
+        recording_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(monitor_recordings)"
+            )
+        }
+
+        if "container" not in recording_columns:
+            connection.execute(
+                """
+                ALTER TABLE monitor_recordings
+                ADD COLUMN container TEXT NOT NULL
+                    DEFAULT 'mp4'
+                    CHECK (container IN ('mp4', 'webm'))
+                """
+            )
+
         connection.execute(MONITOR_RECORDING_INDEX)
         connection.commit()
     finally:
@@ -1061,6 +1100,7 @@ def get_monitor_recording_settings():
                 desired_mode,
                 actual_mode,
                 retention_hours,
+                camera_facing,
                 updated_at
             FROM monitor_recording_settings
             WHERE id = 1
@@ -1070,7 +1110,11 @@ def get_monitor_recording_settings():
         connection.close()
 
 
-def set_monitor_recording_settings(desired_mode, retention_hours):
+def set_monitor_recording_settings(
+    desired_mode,
+    retention_hours,
+    camera_facing,
+):
     now = datetime.now(timezone.utc).isoformat()
     connection = open_database()
 
@@ -1081,12 +1125,14 @@ def set_monitor_recording_settings(desired_mode, retention_hours):
             SET
                 desired_mode = ?,
                 retention_hours = ?,
+                camera_facing = ?,
                 updated_at = ?
             WHERE id = 1
             """,
             (
                 desired_mode,
                 retention_hours,
+                camera_facing,
                 now,
             ),
         )
@@ -1127,6 +1173,7 @@ def create_monitor_recording(
     started_at,
     ended_at,
     size_bytes,
+    container="mp4",
 ):
     created_at = datetime.now(timezone.utc).isoformat()
     connection = open_database()
@@ -1142,9 +1189,10 @@ def create_monitor_recording(
                 started_at,
                 ended_at,
                 size_bytes,
+                container,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -1154,6 +1202,7 @@ def create_monitor_recording(
                 started_at,
                 ended_at,
                 size_bytes,
+                container,
                 created_at,
             ),
         )
@@ -1178,6 +1227,7 @@ def list_monitor_recordings(limit=300):
                 started_at,
                 ended_at,
                 size_bytes,
+                container,
                 created_at
             FROM monitor_recordings
             ORDER BY ended_at DESC, id DESC
@@ -1204,6 +1254,7 @@ def find_monitor_recording(recording_id):
                 started_at,
                 ended_at,
                 size_bytes,
+                container,
                 created_at
             FROM monitor_recordings
             WHERE id = ?

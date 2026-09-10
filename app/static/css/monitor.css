@@ -158,6 +158,7 @@
 
 .monitor-recording-controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: end;
     gap: 10px;
 }

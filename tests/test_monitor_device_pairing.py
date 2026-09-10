@@ -135,15 +135,38 @@ class MonitorDevicePairingTest(unittest.TestCase):
             recording_poll.get_json()["recording_mode"],
             "audio",
         )
+        self.assertEqual(
+            recording_poll.get_json()["recording_camera_facing"],
+            "environment",
+        )
 
-        blocked_live_response = admin_client.post(
+        live_while_recording_response = admin_client.post(
             "/api/monitor/control",
             json={
                 "state": "live",
-                "camera_facing": "environment",
+                "camera_facing": "user",
             },
         )
-        self.assertEqual(blocked_live_response.status_code, 409)
+        self.assertEqual(live_while_recording_response.status_code, 200)
+
+        live_poll = device_client.post(
+            "/api/monitor/source/poll",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "source_id": source_id,
+                "actual_state": "armed",
+                "recording_mode": "off",
+            },
+        )
+        self.assertEqual(live_poll.status_code, 200)
+        self.assertEqual(
+            live_poll.get_json()["desired_state"],
+            "live",
+        )
+        self.assertEqual(
+            live_poll.get_json()["recording_mode"],
+            "audio",
+        )
 
         recording_end_ms = int(time.time() * 1000)
         recording_start_ms = recording_end_ms - 10 * 60 * 1000
@@ -153,12 +176,13 @@ class MonitorDevicePairingTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {token}"},
             data={
                 "mode": "audio",
+                "container": "webm",
                 "camera_facing": "",
                 "started_at_ms": str(recording_start_ms),
                 "ended_at_ms": str(recording_end_ms),
                 "recording": (
                     io.BytesIO(b"test-aac-segment"),
-                    "segment.m4a",
+                    "segment.webm",
                 ),
             },
             content_type="multipart/form-data",
@@ -171,11 +195,19 @@ class MonitorDevicePairingTest(unittest.TestCase):
         )
         self.assertEqual(recording_list.status_code, 200)
         self.assertEqual(recording_list.get_json()["count"], 1)
+        self.assertEqual(
+            recording_list.get_json()["recordings"][0]["container"],
+            "webm",
+        )
 
         playback_response = admin_client.get(
             f"/api/monitor/recordings/{recording_id}"
         )
         self.assertEqual(playback_response.status_code, 200)
+        self.assertEqual(
+            playback_response.content_type,
+            "audio/webm",
+        )
         self.assertEqual(playback_response.data, b"test-aac-segment")
         playback_response.close()
 

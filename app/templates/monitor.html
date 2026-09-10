@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/monitor.css') }}?v=5"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=6"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/monitor.js') }}?v=5"
+        src="{{ url_for('static', filename='js/monitor.js') }}?v=6"
     ></script>
 </head>
 
@@ -161,6 +161,18 @@
                         </select>
                     </label>
 
+                    <label>
+                        Camera înregistrării
+                        <select id="recording-camera-facing" disabled>
+                            <option value="environment">
+                                Camera din spate
+                            </option>
+                            <option value="user">
+                                Camera frontală
+                            </option>
+                        </select>
+                    </label>
+
                     <button id="apply-recording-button" type="button" disabled>
                         Aplică
                     </button>
@@ -168,8 +180,9 @@
             </div>
 
             <p class="monitor-recording-note">
-                Segmente de 10 minute, salvate pe telefon. Modurile de
-                înregistrare și transmisia live nu rulează simultan.
+                Segmente de 10 minute. Fără live sunt înregistrate pe
+                telefon; în timpul transmisiei, browserul arhivează
+                același flux video și audio pe care îl redă.
             </p>
 
             <div class="monitor-recording-summary">

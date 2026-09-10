@@ -7,6 +7,8 @@ final class MonitorStateStore {
     private static final String PREFERENCES = "monitor_state";
     private static final String ARMED = "armed";
     private static final String CAMERA_FACING = "camera_facing";
+    private static final String RECORDING_CAMERA_FACING =
+        "recording_camera_facing";
     private static final String RECORDING_MODE = "recording_mode";
 
     private MonitorStateStore() {}
@@ -39,6 +41,27 @@ final class MonitorStateStore {
             .edit()
             .putString(
                 CAMERA_FACING,
+                "user".equals(cameraFacing) ? "user" : "environment"
+            )
+            .apply();
+    }
+
+    static String recordingCameraFacing(Context context) {
+        String facing = preferences(context).getString(
+            RECORDING_CAMERA_FACING,
+            "environment"
+        );
+        return "user".equals(facing) ? "user" : "environment";
+    }
+
+    static void updateRecordingCameraFacing(
+        Context context,
+        String cameraFacing
+    ) {
+        preferences(context)
+            .edit()
+            .putString(
+                RECORDING_CAMERA_FACING,
                 "user".equals(cameraFacing) ? "user" : "environment"
             )
             .apply();
