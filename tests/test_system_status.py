@@ -25,6 +25,7 @@ class SystemStatusRoutesTest(unittest.TestCase):
         database.create_user("admin", "test-password", role="admin")
         database.create_user("member", "test-password", role="user")
 
+        cls.database = database
         cls.main = importlib.import_module("app.main")
         cls.status_module = importlib.import_module("app.system_status")
         cls.client = cls.main.app.test_client()
@@ -127,6 +128,137 @@ class SystemStatusRoutesTest(unittest.TestCase):
         result = response.get_json()
         self.assertEqual(result["cpu"]["usage_percent"], 12.5)
         self.assertEqual(result["temperature"]["celsius"], 35.4)
+
+    def test_power_and_history_apis_require_admin(self):
+        for path in ("/api/system/power", "/api/system/history?hours=24"):
+            self.assertEqual(self.client.get(path).status_code, 401)
+
+        self.assertEqual(self.login("member").status_code, 200)
+
+        for path in ("/api/system/power", "/api/system/history?hours=24"):
+            self.assertEqual(self.client.get(path).status_code, 403)
+
+    def test_admin_can_read_power_and_history(self):
+        self.assertEqual(self.login("admin").status_code, 200)
+        power = {
+            "battery": {"percentage": 82},
+            "thermal": {"severity": 0},
+        }
+        metric = {
+            "recorded_at": "2026-09-11T10:00:00+00:00",
+            "cpu_usage_percent": 12.5,
+        }
+
+        with (
+            patch.object(
+                self.status_module,
+                "collect_power_snapshot",
+                return_value=power,
+            ),
+            patch.object(
+                self.status_module,
+                "get_thermal_policy",
+                return_value={"enabled": True},
+            ),
+            patch.object(
+                self.status_module,
+                "get_guardian_status",
+                return_value={"level": "normal"},
+            ),
+            patch.object(
+                self.status_module,
+                "list_system_metrics",
+                return_value=[metric],
+            ) as list_metrics,
+        ):
+            power_response = self.client.get("/api/system/power")
+            history_response = self.client.get(
+                "/api/system/history?hours=24"
+            )
+
+        self.assertEqual(power_response.status_code, 200)
+        self.assertEqual(
+            power_response.get_json()["battery"]["percentage"],
+            82,
+        )
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(history_response.get_json()["metrics"], [metric])
+        list_metrics.assert_called_once_with(24)
+
+    def test_history_downsampling_keeps_first_and_last_measurement(self):
+        for value in range(6):
+            self.database.record_system_metric(
+                {"cpu_usage_percent": value}
+            )
+
+        metrics = self.database.list_system_metrics(hours=1, limit=3)
+
+        self.assertEqual(len(metrics), 3)
+        self.assertEqual(metrics[0]["cpu_usage_percent"], 0)
+        self.assertEqual(metrics[-1]["cpu_usage_percent"], 5)
+
+    def test_power_policy_rejects_unknown_fields(self):
+        self.assertEqual(self.login("admin").status_code, 200)
+
+        response = self.client.post(
+            "/api/system/power/policy",
+            json={"run_any_command": True},
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_charge_limit_requires_supported_kernel_control(self):
+        self.assertEqual(self.login("admin").status_code, 200)
+
+        with patch.object(
+            self.status_module,
+            "collect_power_snapshot",
+            return_value={
+                "battery": {"charge_control": {"supported": False}}
+            },
+        ):
+            response = self.client.post(
+                "/api/system/power/charge-limit",
+                json={"limit_percent": 85},
+            )
+
+        self.assertEqual(response.status_code, 409)
+
+    def test_admin_can_apply_supported_charge_limit(self):
+        self.assertEqual(self.login("admin").status_code, 200)
+
+        with (
+            patch.object(
+                self.status_module,
+                "collect_power_snapshot",
+                return_value={
+                    "battery": {
+                        "charge_control": {
+                            "supported": True,
+                            "driver": "standard",
+                        }
+                    }
+                },
+            ),
+            patch.object(
+                self.status_module,
+                "apply_charge_limit",
+                return_value=85,
+            ) as apply_limit,
+            patch.object(
+                self.status_module,
+                "save_thermal_policy",
+                return_value={"charge_limit_percent": 85},
+            ) as save_policy,
+        ):
+            response = self.client.post(
+                "/api/system/power/charge-limit",
+                json={"limit_percent": 85},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        apply_limit.assert_called_once_with("standard", 85)
+        save_policy.assert_called_once_with({"charge_limit_percent": 85})
 
     def test_admin_can_control_only_supported_resource_services(self):
         self.assertEqual(self.login("admin").status_code, 200)

@@ -274,6 +274,30 @@ ON monitor_recordings (
 )
 """
 
+SYSTEM_METRIC_SCHEMA = """
+CREATE TABLE IF NOT EXISTS system_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at TEXT NOT NULL,
+    cpu_usage_percent REAL,
+    gpu_usage_percent REAL,
+    battery_temperature_c REAL,
+    cpu_temperature_c REAL,
+    gpu_temperature_c REAL,
+    skin_temperature_c REAL,
+    thermal_severity INTEGER,
+    battery_percent INTEGER,
+    voltage_v REAL,
+    current_a REAL,
+    power_w REAL
+)
+"""
+
+SYSTEM_METRIC_INDEX = """
+CREATE INDEX IF NOT EXISTS system_metrics_timeline
+ON system_metrics (recorded_at, id)
+"""
+
+
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -460,6 +484,8 @@ def initialize_database():
         )
 
         connection.execute(MONITOR_RECORDING_INDEX)
+        connection.execute(SYSTEM_METRIC_SCHEMA)
+        connection.execute(SYSTEM_METRIC_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -834,6 +860,111 @@ def clear_ai_messages(user_id):
         )
         connection.commit()
 
+        return cursor.rowcount
+    finally:
+        connection.close()
+
+
+def record_system_metric(metric):
+    recorded_at = metric.get("recorded_at") or datetime.now(
+        timezone.utc
+    ).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO system_metrics (
+                recorded_at,
+                cpu_usage_percent,
+                gpu_usage_percent,
+                battery_temperature_c,
+                cpu_temperature_c,
+                gpu_temperature_c,
+                skin_temperature_c,
+                thermal_severity,
+                battery_percent,
+                voltage_v,
+                current_a,
+                power_w
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                recorded_at,
+                metric.get("cpu_usage_percent"),
+                metric.get("gpu_usage_percent"),
+                metric.get("battery_temperature_c"),
+                metric.get("cpu_temperature_c"),
+                metric.get("gpu_temperature_c"),
+                metric.get("skin_temperature_c"),
+                metric.get("thermal_severity"),
+                metric.get("battery_percent"),
+                metric.get("voltage_v"),
+                metric.get("current_a"),
+                metric.get("power_w"),
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    return recorded_at
+
+
+def list_system_metrics(hours=24, limit=3000):
+    hours = min(168, max(1, int(hours)))
+    limit = min(5000, max(2, int(limit)))
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    connection = open_database()
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT
+                recorded_at,
+                cpu_usage_percent,
+                gpu_usage_percent,
+                battery_temperature_c,
+                cpu_temperature_c,
+                gpu_temperature_c,
+                skin_temperature_c,
+                thermal_severity,
+                battery_percent,
+                voltage_v,
+                current_a,
+                power_w
+            FROM system_metrics
+            WHERE recorded_at >= ?
+            ORDER BY recorded_at ASC, id ASC
+            """,
+            (cutoff.isoformat(),),
+        ).fetchall()
+        metrics = [dict(row) for row in rows]
+
+        if len(metrics) <= limit:
+            return metrics
+
+        last_index = len(metrics) - 1
+        selected_indexes = {
+            round(index * last_index / (limit - 1))
+            for index in range(limit)
+        }
+        return [metrics[index] for index in sorted(selected_indexes)]
+    finally:
+        connection.close()
+
+
+def prune_system_metrics(keep_hours=168):
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(24, keep_hours))
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            "DELETE FROM system_metrics WHERE recorded_at < ?",
+            (cutoff.isoformat(),),
+        )
+        connection.commit()
         return cursor.rowcount
     finally:
         connection.close()

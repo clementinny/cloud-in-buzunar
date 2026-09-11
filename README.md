@@ -25,6 +25,9 @@ responsive web dashboard.
 - Administrator-only system status dashboard
 - Live CPU, RAM, storage, network, GPU and process monitor
 - Optional root-aware CPU/GPU view with Android-wide process usage
+- Thermal guardian with automatic heavy-service suspension and recovery
+- Seven-day CPU, GPU and temperature history
+- Root-aware battery health and supported charge-limit controls
 - Safe dashboard controls for AI, aria2 and Transmission
 - Termux:Boot autostart, watchdog and daily backup supervision
 - Responsive interface built without a frontend framework
@@ -316,6 +319,20 @@ Gunicorn, aria2 and Transmission. A lightweight watchdog checks them every
 60 seconds, restarts an unavailable configured service after three failed
 checks, and creates a daily backup while retaining the newest three copies.
 
+The same watchdog records CPU, GPU, battery and thermal measurements once
+per minute. The thermal guardian is enabled by default: at 40 °C battery
+temperature it suspends configured heavy services, at 43 °C it can also stop
+aria2, and it waits for 37.5 °C before recovery. Android thermal severity and
+SoC/GPU/skin sensors can trigger protection earlier when available. The web
+server and SSH are never stopped by this guardian.
+
+On rooted devices, the status dashboard also reports battery voltage,
+current, estimated health, cycle count and kernel thermal sensors. A charge
+limit can be selected only when the kernel exposes a recognized control; no
+limit is applied automatically. Supported choices are deliberately restricted
+to 80%, 85% and 100%, and the selected value is re-applied by the watchdog
+after a reboot.
+
 AI is intentionally disabled at boot to reduce heat and battery use. Enable
 it later with:
 
@@ -329,6 +346,7 @@ Inspect the current state and logs with:
 scripts/cloud-services.sh status
 tail -n 50 "$HOME/cloud-in-buzunar-data/logs/cloud-services.log"
 tail -n 50 "$HOME/cloud-in-buzunar-data/logs/cloud-watchdog.log"
+tail -n 50 "$HOME/cloud-in-buzunar-data/logs/thermal-guardian.log"
 ```
 
 Settings are stored in `~/cloud-in-buzunar-data/autostart.conf`. Disable

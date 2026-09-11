@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/status.css') }}?v=4"
+        href="{{ url_for('static', filename='css/status.css') }}?v=6"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/status.js') }}?v=5"
+        src="{{ url_for('static', filename='js/status.js') }}?v=6"
     ></script>
 </head>
 
@@ -164,6 +164,95 @@
             </p>
         </section>
 
+        <section class="power-panel">
+            <div class="power-panel-heading">
+                <div>
+                    <p class="status-section-label">Root Power Center</p>
+                    <h2>Protecție termică și baterie</h2>
+                    <p>
+                        Guardianul rulează prin watchdog chiar dacă această
+                        pagină este închisă și păstrează șapte zile de istoric.
+                    </p>
+                </div>
+                <div class="guardian-state">
+                    <span id="guardian-indicator"></span>
+                    <div>
+                        <strong id="guardian-title">Se verifică...</strong>
+                        <small id="guardian-detail">Așteaptă prima citire.</small>
+                    </div>
+                </div>
+            </div>
+
+            <p id="power-error" class="status-error" role="alert" hidden></p>
+            <div id="battery-metrics" class="battery-metrics"></div>
+
+            <div class="power-controls-grid">
+                <form id="thermal-policy-form" class="power-control-card">
+                    <h3>Protecție automată</h3>
+                    <label class="toggle-row">
+                        <input id="thermal-enabled" type="checkbox">
+                        <span>Guardian termic activ</span>
+                    </label>
+                    <div class="threshold-grid">
+                        <label>Avertizare °C<input id="warning-temperature" type="number" min="30" max="55" step="0.5"></label>
+                        <label>Critic °C<input id="critical-temperature" type="number" min="30" max="55" step="0.5"></label>
+                        <label>Revenire °C<input id="recovery-temperature" type="number" min="30" max="55" step="0.5"></label>
+                    </div>
+                    <label class="toggle-row"><input id="thermal-stop-ai" type="checkbox"><span>Oprește AI-ul când se încălzește</span></label>
+                    <label class="toggle-row"><input id="thermal-stop-transmission" type="checkbox"><span>Oprește Transmission când se încălzește</span></label>
+                    <label class="toggle-row"><input id="thermal-stop-aria2" type="checkbox"><span>Oprește aria2 numai la nivel critic</span></label>
+                    <button type="submit">Salvează protecția</button>
+                </form>
+
+                <div class="power-control-card">
+                    <h3>Încărcare mod server</h3>
+                    <p id="charge-limit-note">Se verifică suportul oferit de kernel.</p>
+                    <label for="charge-limit-select">Limită încărcare</label>
+                    <select id="charge-limit-select" disabled>
+                        <option value="80">80% · durată de viață maximă</option>
+                        <option value="85">85% · recomandat pentru server</option>
+                        <option value="100">100% · fără limitare</option>
+                    </select>
+                    <button id="apply-charge-limit" type="button" disabled>Aplică limita</button>
+                    <p class="control-warning">
+                        Se scrie numai în nodul confirmat al driverului și
+                        valoarea este reaplicată după repornire de guardian.
+                    </p>
+                </div>
+            </div>
+
+            <details class="thermal-sensors-card">
+                <summary>Senzori termici detectați</summary>
+                <div id="thermal-sensors"></div>
+            </details>
+
+            <div class="history-heading">
+                <div><h3>Istoric temperatură și utilizare</h3><p>O măsurătoare pe minut, păstrată șapte zile.</p></div>
+                <select id="history-hours" aria-label="Interval istoric">
+                    <option value="6">Ultimele 6 ore</option>
+                    <option value="24" selected>Ultimele 24 ore</option>
+                    <option value="48">Ultimele 48 ore</option>
+                    <option value="168">Ultimele 7 zile</option>
+                </select>
+            </div>
+
+            <div class="history-grid">
+                <article class="history-chart-card">
+                    <h4>CPU și GPU</h4>
+                    <div class="chart-legend"><span class="is-cpu">CPU</span><span class="is-gpu">GPU</span></div>
+                    <svg id="usage-history-chart" viewBox="0 0 1000 240" role="img" aria-label="Istoric CPU și GPU"></svg>
+                </article>
+                <article class="history-chart-card">
+                    <h4>Temperaturi</h4>
+                    <div class="chart-legend"><span class="is-battery">Baterie</span><span class="is-cpu-temp">CPU</span><span class="is-gpu-temp">GPU</span></div>
+                    <svg id="temperature-history-chart" viewBox="0 0 1000 240" role="img" aria-label="Istoric temperaturi"></svg>
+                </article>
+            </div>
+            <p id="history-empty" class="backup-list-empty" hidden>
+                Istoricul va apărea după prima verificare a guardianului.
+            </p>
+        </section>
+
         <section
             id="service-grid"
             class="service-grid"
@@ -223,9 +312,10 @@
                 <span><i class="legend-dot is-offline"></i>Indisponibil</span>
             </div>
             <p>
-                Verificarea stării nu pornește și nu oprește automat
-                serviciile. Numai butoanele dedicate pot controla AI,
-                aria2 și Transmission. Restaurarea rulează numai după
+                Butoanele dedicate controlează manual AI, aria2 și
+                Transmission. Dacă guardianul termic este activ, el poate
+                suspenda automat numai serviciile grele selectate și le
+                repornește după răcire. Restaurarea rulează numai după
                 confirmarea explicită a administratorului.
             </p>
         </section>

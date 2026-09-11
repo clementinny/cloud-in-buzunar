@@ -28,6 +28,12 @@ from app.database import (
     find_user_by_id,
     get_active_monitor_source,
     get_monitor_recording_settings,
+    list_system_metrics,
+)
+from app.device_power import (
+    DevicePowerError,
+    apply_charge_limit,
+    collect_power_snapshot,
 )
 from app.downloads import (
     Aria2Error,
@@ -45,6 +51,12 @@ from app.service_control import (
     set_aria2_enabled,
     set_transmission_enabled,
     transmission_is_enabled,
+)
+from app.thermal_guardian import (
+    ThermalPolicyError,
+    get_guardian_status,
+    get_thermal_policy,
+    save_thermal_policy,
 )
 
 
@@ -882,6 +894,97 @@ def system_resources_api():
     }
 
     return jsonify(payload)
+
+
+@system_status_blueprint.get("/api/system/power")
+@require_status_admin
+def system_power_api():
+    return jsonify(
+        {
+            **collect_power_snapshot(),
+            "policy": get_thermal_policy(),
+            "guardian": get_guardian_status(),
+        }
+    )
+
+
+@system_status_blueprint.get("/api/system/history")
+@require_status_admin
+def system_history_api():
+    try:
+        hours = int(request.args.get("hours", 24))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Intervalul istoricului este invalid."}), 400
+
+    if hours not in {6, 24, 48, 168}:
+        return jsonify(
+            {"error": "Intervalul trebuie să fie 6, 24, 48 sau 168 de ore."}
+        ), 400
+
+    return jsonify({"hours": hours, "metrics": list_system_metrics(hours)})
+
+
+@system_status_blueprint.post("/api/system/power/policy")
+@require_status_admin
+def system_power_policy_api():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Configurația termică este invalidă."}), 400
+
+    allowed_fields = {
+        "enabled",
+        "warning_temperature_c",
+        "critical_temperature_c",
+        "recovery_temperature_c",
+        "stop_ai",
+        "stop_transmission",
+        "stop_aria2_on_critical",
+    }
+
+    if set(payload) - allowed_fields:
+        return jsonify({"error": "Configurația conține câmpuri necunoscute."}), 400
+
+    try:
+        policy = save_thermal_policy(payload)
+    except ThermalPolicyError as error:
+        return jsonify({"error": str(error)}), 400
+
+    return jsonify({"policy": policy, "message": "Protecția a fost salvată."})
+
+
+@system_status_blueprint.post("/api/system/power/charge-limit")
+@require_status_admin
+def system_charge_limit_api():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict) or set(payload) != {"limit_percent"}:
+        return jsonify({"error": "Limita de încărcare este invalidă."}), 400
+
+    power = collect_power_snapshot()
+    charge_control = power.get("battery", {}).get("charge_control", {})
+
+    if not charge_control.get("supported"):
+        return jsonify(
+            {"error": "Kernelul nu expune o limită de încărcare compatibilă."}
+        ), 409
+
+    try:
+        applied = apply_charge_limit(
+            charge_control["driver"],
+            payload["limit_percent"],
+        )
+        policy = save_thermal_policy({"charge_limit_percent": applied})
+    except (DevicePowerError, ThermalPolicyError) as error:
+        return jsonify({"error": str(error)}), 503
+
+    return jsonify(
+        {
+            "limit_percent": applied,
+            "policy": policy,
+            "message": f"Limita de încărcare a fost setată la {applied}%.",
+        }
+    )
 
 
 @system_status_blueprint.post(

@@ -13,6 +13,8 @@ WATCHDOG_PID_FILE="$RUNTIME_DIR/cloud-watchdog.pid"
 SERVICE_LOG="$LOG_DIR/cloud-services.log"
 WATCHDOG_LOG="$LOG_DIR/cloud-watchdog.log"
 BACKUP_LOG="$LOG_DIR/backup.log"
+THERMAL_LOG="$LOG_DIR/thermal-guardian.log"
+THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 
 START_SSHD=true
 START_WEB=true
@@ -93,6 +95,21 @@ ai_is_healthy() {
         --max-time 5 \
         --output /dev/null \
         "http://127.0.0.1:8081/health"
+}
+
+
+thermal_service_is_suspended() {
+    [ -f "$THERMAL_SUSPENDED_DIR/$1" ]
+}
+
+
+run_thermal_guardian_check() {
+    [ -x "$PYTHON" ] || return 0
+    cd "$PROJECT_DIR" || return 1
+
+    "$PYTHON" -m app.thermal_guardian check \
+        >> "$THERMAL_LOG" 2>&1 || \
+        log_message WARN "Verificarea termică a eșuat."
 }
 
 
@@ -492,7 +509,10 @@ run_watchdog() {
             fi
         fi
 
-        if [ "$START_ARIA2" = true ]; then
+        run_thermal_guardian_check
+
+        if [ "$START_ARIA2" = true ] \
+            && ! thermal_service_is_suspended aria2; then
             if port_responds 6800; then
                 aria_failures=0
             else
@@ -506,7 +526,8 @@ run_watchdog() {
             fi
         fi
 
-        if [ "$START_TRANSMISSION" = true ]; then
+        if [ "$START_TRANSMISSION" = true ] \
+            && ! thermal_service_is_suspended transmission; then
             if port_responds 9091; then
                 transmission_failures=0
             else
@@ -521,7 +542,8 @@ run_watchdog() {
             fi
         fi
 
-        if [ "$START_AI" = true ]; then
+        if [ "$START_AI" = true ] \
+            && ! thermal_service_is_suspended ai; then
             if ai_is_healthy; then
                 ai_failures=0
             else
@@ -561,6 +583,8 @@ print_service_status() {
         "$(ai_is_healthy && echo online || echo offline)"
     printf '  Watchdog:     %s\n' \
         "$(watchdog_is_running && echo online || echo offline)"
+    printf '  Protecție termică: %s\n' \
+        "$($PYTHON -m app.thermal_guardian status 2>/dev/null || echo indisponibil)"
     printf '  AI la boot:   %s\n' "$START_AI"
     printf '  Backup zilnic: %s (păstrează %s)\n' \
         "$BACKUP_ENABLED" "$BACKUP_KEEP"

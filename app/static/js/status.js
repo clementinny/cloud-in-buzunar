@@ -31,14 +31,42 @@ const androidProcessListEmpty = document.querySelector(
 );
 const androidProcessNote = document.querySelector("#android-process-note");
 const resourceUpdated = document.querySelector("#resource-updated");
+const powerError = document.querySelector("#power-error");
+const batteryMetrics = document.querySelector("#battery-metrics");
+const guardianState = document.querySelector(".guardian-state");
+const guardianTitle = document.querySelector("#guardian-title");
+const guardianDetail = document.querySelector("#guardian-detail");
+const thermalSensors = document.querySelector("#thermal-sensors");
+const thermalPolicyForm = document.querySelector("#thermal-policy-form");
+const thermalEnabled = document.querySelector("#thermal-enabled");
+const warningTemperature = document.querySelector("#warning-temperature");
+const criticalTemperature = document.querySelector("#critical-temperature");
+const recoveryTemperature = document.querySelector("#recovery-temperature");
+const thermalStopAi = document.querySelector("#thermal-stop-ai");
+const thermalStopTransmission = document.querySelector(
+    "#thermal-stop-transmission",
+);
+const thermalStopAria2 = document.querySelector("#thermal-stop-aria2");
+const chargeLimitSelect = document.querySelector("#charge-limit-select");
+const applyChargeLimitButton = document.querySelector("#apply-charge-limit");
+const chargeLimitNote = document.querySelector("#charge-limit-note");
+const historyHours = document.querySelector("#history-hours");
+const usageHistoryChart = document.querySelector("#usage-history-chart");
+const temperatureHistoryChart = document.querySelector(
+    "#temperature-history-chart",
+);
+const historyEmpty = document.querySelector("#history-empty");
 
 const refreshIntervalMilliseconds = 10_000;
 const resourceRefreshIntervalMilliseconds = 8_000;
+const powerRefreshIntervalMilliseconds = 60_000;
 let refreshTimer = null;
 let resourceRefreshTimer = null;
+let powerRefreshTimer = null;
 let refreshInProgress = false;
 let backupRefreshInProgress = false;
 let resourceRefreshInProgress = false;
+let powerRefreshInProgress = false;
 let latestProcesses = [];
 
 const stateLabels = {
@@ -271,6 +299,347 @@ function createResourceCard(label, value, detail, state = "normal") {
     card.append(labelElement, valueElement, detailElement);
 
     return card;
+}
+
+function createBatteryMetric(label, value, detail = "") {
+    const card = document.createElement("article");
+    card.className = "battery-metric";
+    const labelElement = document.createElement("span");
+    const valueElement = document.createElement("strong");
+    const detailElement = document.createElement("small");
+    labelElement.textContent = label;
+    valueElement.textContent = value;
+    detailElement.textContent = detail;
+    card.append(labelElement, valueElement, detailElement);
+    return card;
+}
+
+function optionalNumber(value, digits = 1, suffix = "") {
+    const number = Number(value);
+    return value !== null && value !== undefined && Number.isFinite(number)
+        ? `${number.toFixed(digits)}${suffix}`
+        : "Indisponibil";
+}
+
+function renderPower(payload) {
+    const battery = payload.battery || {};
+    const thermal = payload.thermal || {};
+    const guardian = payload.guardian || {};
+    const policy = payload.policy || {};
+    const capacityDetail = (
+        battery.full_capacity_ah !== null &&
+        battery.full_capacity_ah !== undefined
+    )
+        ? `${optionalNumber(battery.full_capacity_ah, 2, " Ah")} actual`
+        : "Capacitate neraportată";
+    const metrics = [
+        createBatteryMetric(
+            "Încărcare",
+            optionalNumber(battery.percentage, 0, "%"),
+            battery.status || "Stare necunoscută",
+        ),
+        createBatteryMetric(
+            "Temperatură baterie",
+            optionalNumber(battery.temperature_c, 1, " °C"),
+            battery.health || "Sănătate necunoscută",
+        ),
+        createBatteryMetric(
+            "Putere baterie",
+            optionalNumber(battery.power_w, 2, " W"),
+            `${optionalNumber(battery.voltage_v, 3, " V")} · ` +
+            `${optionalNumber(battery.current_a, 3, " A")}`,
+        ),
+        createBatteryMetric(
+            "Sănătate estimată",
+            optionalNumber(battery.health_percent, 1, "%"),
+            capacityDetail,
+        ),
+        createBatteryMetric(
+            "Cicluri",
+            optionalNumber(battery.cycle_count, 0),
+            battery.technology || "Neraportat",
+        ),
+        createBatteryMetric(
+            "CPU termic",
+            optionalNumber(thermal.cpu_temperature_c, 1, " °C"),
+            thermal.severity_label || "Nivel indisponibil",
+        ),
+        createBatteryMetric(
+            "GPU termic",
+            optionalNumber(thermal.gpu_temperature_c, 1, " °C"),
+            "Senzor driver",
+        ),
+        createBatteryMetric(
+            "Carcasă",
+            optionalNumber(thermal.skin_temperature_c, 1, " °C"),
+            "Senzor skin",
+        ),
+    ];
+    batteryMetrics.replaceChildren(...metrics);
+
+    const level = guardian.level || "unknown";
+    guardianState.className = `guardian-state is-${level}`;
+    guardianTitle.textContent = {
+        normal: "Protecție activă · normal",
+        warning: "Protecție activă · avertizare",
+        critical: "Protecție activă · critic",
+        recovering: "Telefonul se răcește",
+        disabled: "Protecție dezactivată",
+        unknown: "Date termice indisponibile",
+    }[level] || "Guardian în așteptare";
+    const guardianDetails = [
+        guardian.message || "Nu există încă o citire.",
+    ];
+    const suspendedServices = Array.isArray(guardian.suspended_services)
+        ? guardian.suspended_services
+        : [];
+
+    if (suspendedServices.length > 0) {
+        guardianDetails.push(
+            `Suspendate: ${suspendedServices.join(", ")}.`,
+        );
+    }
+
+    if (guardian.last_error) {
+        guardianDetails.push(`Eroare: ${guardian.last_error}`);
+    }
+
+    guardianDetail.textContent = guardianDetails.join(" ");
+
+    thermalEnabled.checked = Boolean(policy.enabled);
+    warningTemperature.value = policy.warning_temperature_c ?? 40;
+    criticalTemperature.value = policy.critical_temperature_c ?? 43;
+    recoveryTemperature.value = policy.recovery_temperature_c ?? 37.5;
+    thermalStopAi.checked = Boolean(policy.stop_ai);
+    thermalStopTransmission.checked = Boolean(policy.stop_transmission);
+    thermalStopAria2.checked = Boolean(policy.stop_aria2_on_critical);
+
+    const sensors = Array.isArray(thermal.sensors) ? thermal.sensors : [];
+    thermalSensors.replaceChildren(...sensors.map((sensor) => {
+        const item = document.createElement("span");
+        item.textContent = `${sensor.name}: ${sensor.temperature_c.toFixed(1)} °C`;
+        return item;
+    }));
+
+    if (sensors.length === 0) {
+        const item = document.createElement("span");
+        item.textContent = "Android nu a expus senzori termici.";
+        thermalSensors.append(item);
+    }
+
+    const chargeControl = battery.charge_control || {};
+    chargeLimitSelect.disabled = !chargeControl.supported;
+    applyChargeLimitButton.disabled = !chargeControl.supported;
+    const currentLimit = Number(chargeControl.current_limit_percent);
+    const allowedLimits = Array.isArray(chargeControl.allowed_limits)
+        ? chargeControl.allowed_limits.map(Number)
+        : [];
+    chargeLimitNote.textContent = [
+        chargeControl.note || "Suport indisponibil.",
+        Number.isFinite(currentLimit)
+            ? `Limita curentă: ${currentLimit}%.`
+            : "",
+    ].filter(Boolean).join(" ");
+
+    if (allowedLimits.includes(currentLimit)) {
+        chargeLimitSelect.value = String(chargeControl.current_limit_percent);
+    } else if (policy.charge_limit_percent) {
+        chargeLimitSelect.value = String(policy.charge_limit_percent);
+    } else {
+        chargeLimitSelect.value = "85";
+    }
+}
+
+function svgElement(name, attributes = {}) {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+
+    for (const [attribute, value] of Object.entries(attributes)) {
+        element.setAttribute(attribute, String(value));
+    }
+
+    return element;
+}
+
+function drawHistoryChart(svg, metrics, series, minimum, maximum, suffix) {
+    svg.replaceChildren();
+    const left = 68;
+    const right = 980;
+    const top = 18;
+    const bottom = 198;
+    const timestamps = metrics.map((metric) => Date.parse(metric.recorded_at));
+    const firstTime = Math.min(...timestamps);
+    const lastTime = Math.max(...timestamps);
+    const timeRange = Math.max(1, lastTime - firstTime);
+
+    for (let index = 0; index <= 4; index += 1) {
+        const y = top + (bottom - top) * index / 4;
+        const value = maximum - (maximum - minimum) * index / 4;
+        svg.append(svgElement("line", {
+            x1: left,
+            x2: right,
+            y1: y,
+            y2: y,
+            class: "chart-grid-line",
+        }));
+        const label = svgElement("text", {
+            x: 4,
+            y: y + 7,
+            class: "chart-axis-label",
+        });
+        label.textContent = `${Math.round(value)}${suffix}`;
+        svg.append(label);
+    }
+
+    for (const item of series) {
+        const points = metrics.flatMap((metric, index) => {
+            const value = Number(metric[item.key]);
+
+            if (metric[item.key] === null || !Number.isFinite(value)) {
+                return [];
+            }
+
+            const x = left + (timestamps[index] - firstTime) / timeRange * (right - left);
+            const clamped = Math.min(maximum, Math.max(minimum, value));
+            const y = bottom - (clamped - minimum) / (maximum - minimum) * (bottom - top);
+            return [`${x.toFixed(1)},${y.toFixed(1)}`];
+        });
+
+        if (points.length > 0) {
+            svg.append(svgElement("polyline", {
+                points: points.join(" "),
+                class: "chart-line",
+                stroke: item.color,
+            }));
+        }
+    }
+
+    const startLabel = svgElement("text", { x: left, y: 232, class: "chart-axis-label" });
+    const endLabel = svgElement("text", { x: right, y: 232, class: "chart-axis-label", "text-anchor": "end" });
+    startLabel.textContent = new Date(firstTime).toLocaleString("ro-RO", { hour: "2-digit", minute: "2-digit" });
+    endLabel.textContent = new Date(lastTime).toLocaleString("ro-RO", { hour: "2-digit", minute: "2-digit" });
+    svg.append(startLabel, endLabel);
+}
+
+function renderHistory(metrics) {
+    historyEmpty.hidden = metrics.length !== 0;
+
+    if (metrics.length === 0) {
+        usageHistoryChart.replaceChildren();
+        temperatureHistoryChart.replaceChildren();
+        return;
+    }
+
+    drawHistoryChart(
+        usageHistoryChart,
+        metrics,
+        [
+            { key: "cpu_usage_percent", color: "#22d3ee" },
+            { key: "gpu_usage_percent", color: "#a78bfa" },
+        ],
+        0,
+        100,
+        "%",
+    );
+
+    const temperatures = metrics.flatMap((metric) => [
+        metric.battery_temperature_c,
+        metric.cpu_temperature_c,
+        metric.gpu_temperature_c,
+    ]).map(Number).filter(Number.isFinite);
+    const maximum = Math.max(50, Math.ceil(Math.max(...temperatures, 50) / 10) * 10);
+    drawHistoryChart(
+        temperatureHistoryChart,
+        metrics,
+        [
+            { key: "battery_temperature_c", color: "#fbbf24" },
+            { key: "cpu_temperature_c", color: "#fb7185" },
+            { key: "gpu_temperature_c", color: "#c084fc" },
+        ],
+        20,
+        maximum,
+        "°",
+    );
+}
+
+async function loadPowerCenter() {
+    if (powerRefreshInProgress) {
+        return;
+    }
+
+    powerRefreshInProgress = true;
+    powerError.hidden = true;
+
+    try {
+        const [powerResponse, historyResponse] = await Promise.all([
+            fetch("/api/system/power", { headers: { Accept: "application/json" }, cache: "no-store" }),
+            fetch(`/api/system/history?hours=${encodeURIComponent(historyHours.value)}`, { headers: { Accept: "application/json" }, cache: "no-store" }),
+        ]);
+        const power = await readJsonResponse(powerResponse);
+        const history = await readJsonResponse(historyResponse);
+        renderPower(power);
+        renderHistory(Array.isArray(history.metrics) ? history.metrics : []);
+    } catch (error) {
+        powerError.textContent = error.message;
+        powerError.hidden = false;
+    } finally {
+        powerRefreshInProgress = false;
+    }
+}
+
+async function saveThermalPolicy(event) {
+    event.preventDefault();
+    const button = thermalPolicyForm.querySelector("button[type='submit']");
+    button.disabled = true;
+    powerError.hidden = true;
+
+    try {
+        const response = await fetch("/api/system/power/policy", {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({
+                enabled: thermalEnabled.checked,
+                warning_temperature_c: Number(warningTemperature.value),
+                critical_temperature_c: Number(criticalTemperature.value),
+                recovery_temperature_c: Number(recoveryTemperature.value),
+                stop_ai: thermalStopAi.checked,
+                stop_transmission: thermalStopTransmission.checked,
+                stop_aria2_on_critical: thermalStopAria2.checked,
+            }),
+        });
+        await readJsonResponse(response);
+        await loadPowerCenter();
+    } catch (error) {
+        powerError.textContent = error.message;
+        powerError.hidden = false;
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function applyChargeLimit() {
+    const limit = Number(chargeLimitSelect.value);
+
+    if (!window.confirm(`Setezi limita de încărcare la ${limit}%?`)) {
+        return;
+    }
+
+    applyChargeLimitButton.disabled = true;
+    powerError.hidden = true;
+
+    try {
+        const response = await fetch("/api/system/power/charge-limit", {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ limit_percent: limit }),
+        });
+        await readJsonResponse(response);
+        await loadPowerCenter();
+    } catch (error) {
+        powerError.textContent = error.message;
+        powerError.hidden = false;
+    } finally {
+        applyChargeLimitButton.disabled = chargeLimitSelect.disabled;
+    }
 }
 
 function usageState(percent, warningAt = 75, criticalAt = 90) {
@@ -753,6 +1122,9 @@ refreshButton.addEventListener("click", loadSystemStatus);
 refreshBackupsButton.addEventListener("click", loadBackups);
 refreshResourcesButton.addEventListener("click", loadResources);
 processSort.addEventListener("change", renderProcesses);
+thermalPolicyForm.addEventListener("submit", saveThermalPolicy);
+applyChargeLimitButton.addEventListener("click", applyChargeLimit);
+historyHours.addEventListener("change", loadPowerCenter);
 
 refreshTimer = window.setInterval(() => {
     if (document.visibilityState === "visible") {
@@ -766,11 +1138,19 @@ resourceRefreshTimer = window.setInterval(() => {
     }
 }, resourceRefreshIntervalMilliseconds);
 
+powerRefreshTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+        loadPowerCenter();
+    }
+}, powerRefreshIntervalMilliseconds);
+
 window.addEventListener("pagehide", () => {
     window.clearInterval(refreshTimer);
     window.clearInterval(resourceRefreshTimer);
+    window.clearInterval(powerRefreshTimer);
 });
 
 loadSystemStatus();
 loadBackups();
 loadResources();
+loadPowerCenter();
