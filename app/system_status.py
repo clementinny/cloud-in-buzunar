@@ -34,6 +34,7 @@ from app.downloads import (
     transmission_call,
 )
 from app.speech_activity import speech_analysis_available
+from app.service_control import transmission_is_enabled
 
 
 system_status_blueprint = Blueprint("system_status", __name__)
@@ -507,6 +508,14 @@ def collect_aria2_service():
 
 
 def collect_transmission_service():
+    if not transmission_is_enabled():
+        return service_result(
+            "transmission",
+            "Transmission",
+            "idle",
+            "Oprit intenționat din Download Manager.",
+        )
+
     if not port_is_open(9091):
         return service_result(
             "transmission",

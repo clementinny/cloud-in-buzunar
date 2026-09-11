@@ -30,6 +30,22 @@
     background: rgba(15, 23, 42, 0.82);
 }
 
+.downloads-service-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.transmission-service-message {
+    margin: -8px 4px 0;
+    color: #94a3b8;
+}
+
+.transmission-service-message.is-error {
+    color: #fca5a5;
+}
+
 .downloads-status-panel,
 .downloads-list-toolbar,
 .new-download-actions,
@@ -153,6 +169,16 @@
     background: rgba(202, 138, 4, 0.2);
 }
 
+.status-seeding {
+    color: #67e8f9;
+    background: rgba(8, 145, 178, 0.2);
+}
+
+.status-seed-paused {
+    color: #fde68a;
+    background: rgba(202, 138, 4, 0.2);
+}
+
 .download-card progress {
     width: 100%;
 }
@@ -175,6 +201,14 @@
     .download-card-header {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .downloads-service-actions {
+        justify-content: stretch;
+    }
+
+    .downloads-service-actions button {
+        flex: 1;
     }
 
     .download-options {

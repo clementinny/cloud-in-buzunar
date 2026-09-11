@@ -69,6 +69,8 @@ Available operations include:
 - Choose the owner and destination
 - Monitor progress and transfer speed
 - Pause and resume downloads
+- Start or stop seeding separately for every completed torrent
+- Stop Transmission completely without the watchdog restarting it
 - Remove download jobs
 - Keep completed torrents available for seeding
 

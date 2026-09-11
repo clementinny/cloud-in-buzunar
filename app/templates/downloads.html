@@ -15,12 +15,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/downloads.css') }}?v=2"
+        href="{{ url_for('static', filename='css/downloads.css') }}?v=3"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/downloads.js') }}?v=3"
+        src="{{ url_for('static', filename='js/downloads.js') }}?v=4"
     ></script>
 </head>
 
@@ -51,14 +51,32 @@
                 </p>
             </div>
 
-            <button
-                id="refresh-downloads-button"
-                type="button"
-                disabled
-            >
-                Reîncarcă
-            </button>
+            <div class="downloads-service-actions">
+                <button
+                    id="transmission-service-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Se verifică Transmission...
+                </button>
+
+                <button
+                    id="refresh-downloads-button"
+                    type="button"
+                    disabled
+                >
+                    Reîncarcă
+                </button>
+            </div>
         </section>
+
+        <p
+            id="transmission-service-message"
+            class="transmission-service-message"
+        >
+            Poți opri serviciul complet sau doar seed-ul unui torrent.
+        </p>
 
         <form
             id="new-download-form"
@@ -131,6 +149,7 @@
         id="start-torrent-button"
         class="secondary-button"
         type="button"
+        disabled
     >
         Pornește torrentul
     </button>

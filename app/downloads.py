@@ -15,6 +15,11 @@ from flask import (
 )
 
 from app.database import find_user_by_id
+from app.service_control import (
+    ServiceControlError,
+    set_transmission_enabled,
+    transmission_is_enabled,
+)
 
 
 downloads_blueprint = Blueprint(
@@ -256,6 +261,12 @@ def serialize_transmission_download(download):
     }
 
     status = status_labels.get(status_number, "waiting")
+
+    if (
+        status_number == 0
+        and float(download.get("percent_done", 0)) >= 1
+    ):
+        status = "seed-paused"
 
     if error_number:
         status = "error"
@@ -523,27 +534,64 @@ def list_downloads():
     except Aria2Error:
         services["aria2"] = "unavailable"
 
-    try:
-        serialized_downloads.extend(
-            serialize_transmission_download(download)
-            for download in get_transmission_downloads()
-        )
-    except TransmissionError:
-        services["transmission"] = "unavailable"
+    transmission_enabled = transmission_is_enabled()
 
-    if all(
-        status == "unavailable"
-        for status in services.values()
-    ):
-        return jsonify(
-            {"error": "Download services are unavailable"}
-        ), 503
+    if transmission_enabled:
+        try:
+            serialized_downloads.extend(
+                serialize_transmission_download(download)
+                for download in get_transmission_downloads()
+            )
+        except TransmissionError:
+            services["transmission"] = "unavailable"
+    else:
+        services["transmission"] = "stopped"
 
     return jsonify(
         {
             "count": len(serialized_downloads),
             "downloads": serialized_downloads,
             "services": services,
+            "transmission": {
+                "enabled": transmission_enabled,
+                "online": (
+                    services["transmission"] == "connected"
+                ),
+            },
+        }
+    )
+
+
+@downloads_blueprint.post(
+    "/api/downloads/transmission/service"
+)
+@require_download_admin
+def control_transmission_service():
+    payload = request.get_json(silent=True)
+
+    if (
+        not isinstance(payload, dict)
+        or type(payload.get("enabled")) is not bool
+    ):
+        return jsonify(
+            {"error": "Câmpul enabled trebuie să fie boolean."}
+        ), 400
+
+    try:
+        enabled = set_transmission_enabled(
+            payload["enabled"]
+        )
+    except ServiceControlError as error:
+        return jsonify({"error": str(error)}), 503
+
+    return jsonify(
+        {
+            "enabled": enabled,
+            "message": (
+                "Transmission a fost pornit."
+                if enabled
+                else "Transmission a fost oprit."
+            ),
         }
     )
 

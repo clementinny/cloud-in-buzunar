@@ -15,6 +15,14 @@ const refreshButton =
     document.querySelector(
         "#refresh-downloads-button"
     );
+const transmissionServiceButton =
+    document.querySelector(
+        "#transmission-service-button"
+    );
+const transmissionServiceMessage =
+    document.querySelector(
+        "#transmission-service-message"
+    );
 const downloadForm =
     document.querySelector("#new-download-form");
 const urlInput =
@@ -48,6 +56,8 @@ const downloadsList =
 
 let refreshTimer = null;
 let refreshIsRunning = false;
+let transmissionIsOnline = false;
+let transmissionActionIsRunning = false;
 
 
 function formatBytes(bytes) {
@@ -77,6 +87,7 @@ function getStatusLabel(status) {
         active: "Se descarcă",
         waiting: "În așteptare",
         paused: "Pauză",
+        "seed-paused": "Seed oprit",
         checking: "Se verifică",
         seeding: "Se oferă la seed",
         complete: "Finalizat",
@@ -286,7 +297,6 @@ function renderDownloads(downloads) {
             download.status === "active"
             || download.status === "waiting"
             || download.status === "checking"
-            || download.status === "seeding"
         ) {
             actions.append(
                 createActionButton(
@@ -300,10 +310,36 @@ function renderDownloads(downloads) {
             );
         }
 
+        if (download.status === "seeding") {
+            actions.append(
+                createActionButton(
+                    "Oprește seed-ul",
+                    "secondary-button",
+                    () => runDownloadAction(
+                        download,
+                        "pause",
+                    ),
+                ),
+            );
+        }
+
         if (download.status === "paused") {
             actions.append(
                 createActionButton(
                     "Continuă",
+                    "secondary-button",
+                    () => runDownloadAction(
+                        download,
+                        "resume",
+                    ),
+                ),
+            );
+        }
+
+        if (download.status === "seed-paused") {
+            actions.append(
+                createActionButton(
+                    "Pornește seed-ul",
                     "secondary-button",
                     () => runDownloadAction(
                         download,
@@ -370,17 +406,46 @@ async function loadDownloads() {
         );
         const data = await readJsonResponse(response);
 
-        const connectedServices = Object.entries(
+        transmissionIsOnline = Boolean(
+            data.transmission?.online
+        );
+        transmissionServiceButton.disabled =
+            transmissionActionIsRunning;
+        transmissionServiceButton.textContent =
+            transmissionIsOnline
+                ? "Oprește Transmission"
+                : "Pornește Transmission";
+        startTorrentButton.disabled =
+            !transmissionIsOnline;
+
+        if (transmissionIsOnline) {
+            transmissionServiceMessage.textContent =
+                "Transmission rulează. Poți opri separat "
+                + "seed-ul fiecărui torrent.";
+        } else if (data.transmission?.enabled) {
+            transmissionServiceMessage.textContent =
+                "Transmission este configurat să ruleze, "
+                + "dar momentan nu răspunde.";
+        } else {
+            transmissionServiceMessage.textContent =
+                "Transmission este oprit intenționat și "
+                + "watchdog-ul nu îl va reporni.";
+        }
+
+        const serviceLabels = {
+            connected: "conectat",
+            unavailable: "indisponibil",
+            stopped: "oprit intenționat",
+        };
+        const serviceSummary = Object.entries(
             data.services ?? {}
-        )
-            .filter(([, status]) =>
-                status === "connected"
-            )
-            .map(([name]) => name);
+        ).map(
+            ([name, status]) =>
+                `${name}: ${serviceLabels[status] ?? status}`,
+        );
 
         serviceStatus.textContent =
-            `${connectedServices.join(" + ")} ` +
-            "conectate · actualizare automată";
+            `${serviceSummary.join(" · ")} · actualizare automată`;
         refreshButton.disabled = false;
 
         renderDownloads(data.downloads);
@@ -394,6 +459,7 @@ async function loadDownloads() {
             "is-error"
         );
         downloadsMessage.hidden = false;
+        transmissionServiceButton.disabled = false;
     } finally {
         refreshIsRunning = false;
     }
@@ -458,6 +524,48 @@ downloadForm.addEventListener(
 refreshButton.addEventListener(
     "click",
     loadDownloads,
+);
+
+
+transmissionServiceButton.addEventListener(
+    "click",
+    async () => {
+        transmissionActionIsRunning = true;
+        transmissionServiceButton.disabled = true;
+        startTorrentButton.disabled = true;
+        transmissionServiceMessage.classList.remove(
+            "is-error"
+        );
+
+        try {
+            const response = await fetch(
+                "/api/downloads/transmission/service",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        enabled: !transmissionIsOnline,
+                    }),
+                },
+            );
+            const data = await readJsonResponse(response);
+
+            transmissionServiceMessage.textContent =
+                data.message;
+            transmissionActionIsRunning = false;
+            await loadDownloads();
+        } catch (error) {
+            transmissionActionIsRunning = false;
+            transmissionServiceMessage.textContent =
+                error.message;
+            transmissionServiceMessage.classList.add(
+                "is-error"
+            );
+            transmissionServiceButton.disabled = false;
+        }
+    },
 );
 
 
@@ -545,7 +653,8 @@ startTorrentButton.addEventListener(
             );
             newDownloadMessage.hidden = false;
         } finally {
-            startTorrentButton.disabled = false;
+            startTorrentButton.disabled =
+                !transmissionIsOnline;
         }
     },
 );

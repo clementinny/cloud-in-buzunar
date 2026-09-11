@@ -247,6 +247,30 @@ start_transmission() {
 }
 
 
+stop_transmission() {
+    if ! process_matches '(^|/)transmission-daemon( |$)'; then
+        log_message INFO "Transmission este deja oprit."
+        return 0
+    fi
+
+    stop_matching_processes '(^|/)transmission-daemon( |$)'
+
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        if ! process_matches '(^|/)transmission-daemon( |$)'; then
+            log_message INFO "Transmission a fost oprit intenționat."
+            return 0
+        fi
+
+        sleep 1
+    done
+
+    log_message ERROR "Transmission nu s-a oprit în timpul alocat."
+    return 1
+}
+
+
 start_ai() {
     [ "$START_AI" = true ] || return 0
 
@@ -520,8 +544,15 @@ case "${1:-}" in
         start_all
         start_backup_if_due
         ;;
+    transmission-start)
+        start_transmission
+        ;;
+    transmission-stop)
+        stop_transmission
+        ;;
     *)
-        printf 'Utilizare: %s {start|boot|watchdog|status|check}\n' "$0"
+        printf '%s\n' \
+            "Utilizare: $0 {start|boot|watchdog|status|check|transmission-start|transmission-stop}"
         exit 1
         ;;
 esac

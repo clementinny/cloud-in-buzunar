@@ -130,6 +130,17 @@ class SystemStatusRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Starea serviciilor", response.get_data(as_text=True))
 
+    def test_intentionally_stopped_transmission_is_not_a_warning(self):
+        with patch.object(
+            self.status_module,
+            "transmission_is_enabled",
+            return_value=False,
+        ):
+            result = self.status_module.collect_transmission_service()
+
+        self.assertEqual(result["state"], "idle")
+        self.assertEqual(result["impact"], "none")
+
 
 if __name__ == "__main__":
     unittest.main()
