@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=20"
+    href="{{ url_for('static', filename='css/app.css') }}?v=21"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=20"
+    src="{{ url_for('static', filename='js/app.js') }}?v=21"
     defer
 ></script>
 </head>
@@ -64,9 +64,12 @@
             </article>
 
             <article id="messages-service" hidden>
-                <h3>Mesagerie</h3>
-                <p>
-                    Mesaje private și criptate între utilizatorii activi.
+                <div class="message-service-heading">
+                    <h3>Mesagerie</h3>
+                    <span id="messages-unread-badge" hidden>0</span>
+                </div>
+                <p id="messages-summary">
+                    Nu ai mesaje necitite.
                 </p>
                 <a href="{{ url_for('messaging.messages_page') }}">
                     Deschide mesageria

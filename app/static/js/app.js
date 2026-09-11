@@ -105,6 +105,12 @@ const systemStatusService = document.querySelector(
 const messagesService = document.querySelector(
     "#messages-service",
 );
+const messagesUnreadBadge = document.querySelector(
+    "#messages-unread-badge",
+);
+const messagesSummary = document.querySelector(
+    "#messages-summary",
+);
 const accountApprovalsService = document.querySelector(
     "#account-approvals-service",
 );
@@ -139,6 +145,7 @@ const maximumUploadSize = 100 * 1024 * 1024;
 let selectedFile = null;
 
 let entryBeingRenamed = null;
+let unreadMessagesLoading = false;
 
 function formatBytes(bytes) {
     if (bytes === 0) {
@@ -407,6 +414,58 @@ async function loginUser(username, password) {
     const data = await response.json();
 
     return data.user;
+}
+
+
+function renderUnreadMessages(count) {
+    const normalizedCount = Math.max(0, Number(count) || 0);
+    const hasUnread = normalizedCount > 0;
+    const label = normalizedCount === 1
+        ? "mesaj necitit"
+        : "mesaje necitite";
+
+    messagesUnreadBadge.textContent = String(normalizedCount);
+    messagesUnreadBadge.hidden = !hasUnread;
+    messagesSummary.textContent = hasUnread
+        ? `Ai ${normalizedCount} ${label}.`
+        : "Nu ai mesaje necitite.";
+    messagesService.classList.toggle("has-unread", hasUnread);
+    document.title = hasUnread
+        ? `(${normalizedCount}) CloudInBuzunar`
+        : "CloudInBuzunar";
+}
+
+
+async function loadUnreadMessages({quiet = false} = {}) {
+    if (currentUser === null || unreadMessagesLoading) {
+        return;
+    }
+
+    unreadMessagesLoading = true;
+
+    try {
+        const response = await fetch("/api/messages/unread");
+
+        if (response.status === 401) {
+            showDisconnectedState();
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(
+                `Mesajele nu pot fi verificate: HTTP ${response.status}`,
+            );
+        }
+
+        const data = await response.json();
+        renderUnreadMessages(data.unread_count);
+    } catch (error) {
+        if (!quiet) {
+            messagesSummary.textContent = error.message;
+        }
+    } finally {
+        unreadMessagesLoading = false;
+    }
 }
 
 
@@ -1014,6 +1073,7 @@ function showDisconnectedState() {
     currentUser = null;
     systemStatusService.hidden = true;
     messagesService.hidden = true;
+    renderUnreadMessages(0);
     accountApprovalsService.hidden = true;
     registrationRequestsSection.hidden = true;
     registrationRequestsList.replaceChildren();
@@ -1345,6 +1405,7 @@ loginForm.addEventListener("submit", async (event) => {
     try {
         currentUser = await loginUser(username, password);
         await loadFiles();
+        await loadUnreadMessages();
 
         if (currentUser.role === "admin") {
             await loadRegistrationRequests();
@@ -1619,6 +1680,7 @@ async function initializeApplication() {
 
         currentUser = user;
         await loadFiles();
+        await loadUnreadMessages();
 
         if (currentUser.role === "admin") {
             await loadRegistrationRequests();
@@ -1630,3 +1692,9 @@ async function initializeApplication() {
 
 
 initializeApplication();
+
+window.setInterval(() => {
+    if (currentUser !== null && !document.hidden) {
+        loadUnreadMessages({quiet: true});
+    }
+}, 5000);

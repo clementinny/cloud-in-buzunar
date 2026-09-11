@@ -99,8 +99,10 @@ class MessagingRoutesTest(unittest.TestCase):
 
     def test_api_requires_authentication(self):
         response = self.client.get("/api/messages/contacts")
+        unread_response = self.client.get("/api/messages/unread")
 
         self.assertEqual(response.status_code, 401)
+        self.assertEqual(unread_response.status_code, 401)
 
     def test_messages_page_redirects_guests(self):
         response = self.client.get("/messages")
@@ -287,6 +289,8 @@ class MessagingRoutesTest(unittest.TestCase):
         )
         self.assertEqual(alice["unread_count"], 1)
         self.assertEqual(alice["last_message"], "Ai primit mesajul?")
+        unread = self.client.get("/api/messages/unread")
+        self.assertEqual(unread.get_json()["unread_count"], 1)
 
         response = self.client.get(
             "/api/messages/conversations/"
@@ -307,6 +311,8 @@ class MessagingRoutesTest(unittest.TestCase):
             if contact["username"] == "alice"
         )
         self.assertEqual(alice["unread_count"], 0)
+        unread = self.client.get("/api/messages/unread")
+        self.assertEqual(unread.get_json()["unread_count"], 0)
 
     def test_conversation_after_id_returns_only_new_messages(self):
         self.assertEqual(self.login("alice").status_code, 200)

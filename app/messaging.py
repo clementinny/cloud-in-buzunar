@@ -11,6 +11,7 @@ from flask import (
 )
 
 from app.database import (
+    count_unread_messages,
     create_private_message,
     find_active_message_contact,
     find_user_by_id,
@@ -102,6 +103,16 @@ def message_contacts():
             "count": len(contacts),
             "contacts": contacts,
         }
+    )
+
+
+@messaging_blueprint.get("/api/messages/unread")
+@require_message_user
+def unread_message_count():
+    user = get_session_user()
+
+    return jsonify(
+        {"unread_count": count_unread_messages(user["id"])}
     )
 
 

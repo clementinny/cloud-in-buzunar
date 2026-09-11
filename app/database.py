@@ -1186,6 +1186,25 @@ def find_active_message_contact(contact_id):
         connection.close()
 
 
+def count_unread_messages(user_id):
+    connection = open_database()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS unread_count
+            FROM private_messages
+            WHERE recipient_id = ?
+              AND read_at IS NULL
+            """,
+            (user_id,),
+        ).fetchone()
+
+        return int(row["unread_count"])
+    finally:
+        connection.close()
+
+
 def create_private_message(sender_id, recipient_id, content):
     if sender_id == recipient_id:
         raise ValueError("Nu îți poți trimite mesaje singur.")

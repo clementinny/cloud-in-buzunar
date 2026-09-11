@@ -145,6 +145,34 @@ article h3 {
     font-size: 1.1rem;
 }
 
+.message-service-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.message-service-heading h3 {
+    margin-bottom: 10px;
+}
+
+#messages-unread-badge {
+    min-width: 28px;
+    padding: 4px 8px;
+    color: #07111f;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-align: center;
+    border-radius: 999px;
+    background: var(--cyan);
+    box-shadow: 0 0 18px rgba(34, 211, 238, 0.42);
+}
+
+#messages-service.has-unread {
+    border-color: rgba(34, 211, 238, 0.52);
+    background: rgba(8, 47, 73, 0.58);
+}
+
 article p,
 #files p {
     color: var(--muted);

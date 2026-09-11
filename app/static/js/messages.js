@@ -127,6 +127,18 @@ function createContactButton(contact) {
 }
 
 
+function updateUnreadPageTitle(contacts) {
+    const unreadCount = contacts.reduce(
+        (total, contact) => total + contact.unread_count,
+        0,
+    );
+
+    document.title = unreadCount > 0
+        ? `(${unreadCount}) Mesagerie · CloudInBuzunar`
+        : "Mesagerie · CloudInBuzunar";
+}
+
+
 async function loadContacts({quiet = false} = {}) {
     if (contactsLoading) {
         return;
@@ -141,6 +153,7 @@ async function loadContacts({quiet = false} = {}) {
         contactsList.replaceChildren(
             ...data.contacts.map(createContactButton),
         );
+        updateUnreadPageTitle(data.contacts);
         contactsEmpty.hidden = data.contacts.length !== 0;
 
         if (selectedContactId !== null) {
