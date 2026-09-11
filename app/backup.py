@@ -12,6 +12,7 @@ DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 MEDIA_DIR = DATA_DIR / "media"
 DATABASE_PATH = DATA_DIR / "cloud-in-buzunar.sqlite3"
+MESSAGE_KEY_PATH = DATA_DIR / "message-encryption-key"
 BACKUP_DIR = DATA_DIR / "backups"
 
 DEFAULT_KEEP = 7
@@ -121,6 +122,9 @@ def create_backup(keep=DEFAULT_KEEP):
             ),
             "media_included": False,
             "media_directory": str(MEDIA_DIR),
+            "message_encryption_key_included": (
+                MESSAGE_KEY_PATH.is_file()
+            ),
         }
 
         manifest_path.write_text(
@@ -146,6 +150,12 @@ def create_backup(keep=DEFAULT_KEEP):
                 manifest_path,
                 arcname="manifest.json",
             )
+
+            if MESSAGE_KEY_PATH.is_file():
+                archive.add(
+                    MESSAGE_KEY_PATH,
+                    arcname="message-encryption-key",
+                )
 
             if UPLOAD_DIR.is_dir():
                 archive.add(

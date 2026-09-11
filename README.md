@@ -1,8 +1,9 @@
 # CloudInBuzunar
 
 A self-hosted personal cloud platform running on Android through Termux.
-It combines secure file storage, media management, background downloads,
-local AI and administrative tools in one responsive web dashboard.
+It combines secure file storage, encrypted private messaging, media
+management, background downloads, local AI and administrative tools in one
+responsive web dashboard.
 
 > Personal engineering project built to explore Linux administration,
 > backend development, authentication, storage, networking and local AI
@@ -18,6 +19,7 @@ local AI and administrative tools in one responsive web dashboard.
 - HTTP, HTTPS, magnet and `.torrent` download management
 - Private local AI using `llama.cpp` and Qwen2.5 models
 - Persistent, per-user AI conversation history
+- Encrypted private messaging between active users
 - Opt-in camera and microphone streaming through WebRTC
 - Automatic rotating backups
 - Administrator-only system status dashboard
@@ -46,6 +48,20 @@ local AI and administrative tools in one responsive web dashboard.
 - Recursive folder deletion with confirmation
 - Safe path resolution to prevent directory traversal
 - Administrator access to manage every user vault
+
+### Private messaging
+
+- Direct conversations between active server accounts
+- Message history and unread counters stored in SQLite
+- Automatic updates without reloading the page
+- Authenticated encryption at rest using a private server key
+- Message text is rendered safely as text, never as HTML
+
+The server decrypts messages for authenticated participants, so this protects
+the SQLite contents at rest but is not end-to-end encryption. The encryption
+key is stored outside Git and included in local backup archives so restored
+messages remain readable. Backups must therefore be protected like the live
+server data.
 
 ### Media Library
 
@@ -130,6 +146,7 @@ flowchart TD
     Transmission[Transmission RPC]
     Llama[llama.cpp server]
     Monitor[WebRTC live monitor]
+    Messages[Encrypted private messages]
     Backup[Rotating backups]
 
     Browser --> Flask
@@ -141,6 +158,8 @@ flowchart TD
     Flask --> Transmission
     Flask --> Llama
     Flask --> Monitor
+    Flask --> Messages
+    Messages --> SQLite
     Backup --> SQLite
     Backup --> Vault
 ```
@@ -172,6 +191,8 @@ app/
 ├── downloads.py        aria2 and Transmission integration
 ├── ai.py               Local AI API and conversation history
 ├── ai_runtime.py       AI model process manager
+├── messaging.py        Private user messaging API
+├── message_crypto.py   Message encryption and key management
 ├── monitor.py          Local WebRTC signaling API
 ├── system_status.py    Read-only service health checks
 ├── static/             JavaScript and CSS

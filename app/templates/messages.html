@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+    <meta name="theme-color" content="#0f172a">
+
+    <title>Mesagerie · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=20"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/messages.css') }}?v=1"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/messages.js') }}?v=1"
+    ></script>
+</head>
+
+<body class="messages-page">
+    <header class="messages-header">
+        <a class="messages-back-link" href="/">← Dashboard</a>
+        <p class="messages-label">CloudInBuzunar · Privat</p>
+        <h1>Mesagerie</h1>
+        <p>
+            Discuții private între conturile active ale serverului.
+        </p>
+    </header>
+
+    <main class="messages-main">
+        <p id="messages-error" role="alert" hidden></p>
+
+        <section class="messenger" aria-label="Mesagerie privată">
+            <aside class="contacts-panel">
+                <div class="contacts-heading">
+                    <div>
+                        <h2>Conversații</h2>
+                        <p id="signed-in-user">Se încarcă...</p>
+                    </div>
+                    <button
+                        id="refresh-contacts"
+                        class="icon-button"
+                        type="button"
+                        aria-label="Reîncarcă utilizatorii"
+                        title="Reîncarcă"
+                    >
+                        ↻
+                    </button>
+                </div>
+
+                <div
+                    id="contacts-list"
+                    class="contacts-list"
+                    aria-live="polite"
+                ></div>
+
+                <p id="contacts-empty" class="contacts-empty" hidden>
+                    Nu există încă alți utilizatori activi.
+                </p>
+            </aside>
+
+            <section class="conversation-panel">
+                <div id="conversation-placeholder" class="conversation-placeholder">
+                    <div aria-hidden="true">✦</div>
+                    <h2>Alege o conversație</h2>
+                    <p>
+                        Selectează un utilizator pentru a vedea istoricul
+                        și a trimite un mesaj.
+                    </p>
+                </div>
+
+                <div id="conversation" class="conversation" hidden>
+                    <div class="conversation-heading">
+                        <div>
+                            <h2 id="conversation-name">—</h2>
+                            <p id="conversation-role">Utilizator activ</p>
+                        </div>
+                        <span class="encryption-badge">
+                            Criptat pe server
+                        </span>
+                    </div>
+
+                    <div
+                        id="message-list"
+                        class="message-list"
+                        aria-live="polite"
+                    ></div>
+
+                    <form id="message-form" class="message-form">
+                        <label for="message-content">Mesajul tău</label>
+                        <div class="message-composer">
+                            <textarea
+                                id="message-content"
+                                maxlength="2000"
+                                rows="2"
+                                placeholder="Scrie un mesaj..."
+                                required
+                            ></textarea>
+                            <button id="send-message" type="submit">
+                                Trimite
+                            </button>
+                        </div>
+                        <div class="composer-footer">
+                            <p id="message-status" role="status"></p>
+                            <span id="message-counter">0 / 2000</span>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </section>
+
+        <p class="messages-privacy-note">
+            Mesajele sunt criptate în baza de date, iar interfața expune
+            conversația numai celor doi participanți. Aceasta nu este
+            criptare end-to-end: serverul deține cheia necesară afișării lor.
+        </p>
+    </main>
+</body>
+</html>

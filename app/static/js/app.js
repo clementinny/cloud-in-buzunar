@@ -102,6 +102,9 @@ const uploadMessage =
 const systemStatusService = document.querySelector(
     "#system-status-service",
 );
+const messagesService = document.querySelector(
+    "#messages-service",
+);
 const accountApprovalsService = document.querySelector(
     "#account-approvals-service",
 );
@@ -1010,6 +1013,7 @@ actions.append(deleteButton);
 function showDisconnectedState() {
     currentUser = null;
     systemStatusService.hidden = true;
+    messagesService.hidden = true;
     accountApprovalsService.hidden = true;
     registrationRequestsSection.hidden = true;
     registrationRequestsList.replaceChildren();
@@ -1053,6 +1057,7 @@ function showConnectedState(fileCount) {
         fileCount === 1 ? "element" : "elemente";
 
     systemStatusService.hidden = currentUser.role !== "admin";
+    messagesService.hidden = false;
     accountApprovalsService.hidden = currentUser.role !== "admin";
     registrationRequestsSection.hidden = currentUser.role !== "admin";
 

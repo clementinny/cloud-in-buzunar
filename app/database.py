@@ -4,6 +4,11 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
+from app.message_crypto import (
+    decrypt_message_content,
+    encrypt_message_content,
+)
+
 
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 DATABASE_PATH = DATA_DIR / "cloud-in-buzunar.sqlite3"
@@ -83,6 +88,40 @@ CREATE INDEX IF NOT EXISTS registration_attempts_lookup
 ON registration_attempts (
     ip_address,
     attempted_at
+)
+"""
+
+PRIVATE_MESSAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS private_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    read_at TEXT,
+    CHECK (sender_id != recipient_id),
+    FOREIGN KEY (sender_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+)
+"""
+PRIVATE_MESSAGE_CONVERSATION_INDEX = """
+CREATE INDEX IF NOT EXISTS private_messages_conversation
+ON private_messages (
+    sender_id,
+    recipient_id,
+    id
+)
+"""
+PRIVATE_MESSAGE_UNREAD_INDEX = """
+CREATE INDEX IF NOT EXISTS private_messages_unread
+ON private_messages (
+    recipient_id,
+    read_at,
+    id
 )
 """
 
@@ -255,6 +294,78 @@ def initialize_database():
         connection.execute(REGISTRATION_REQUEST_SCHEMA)
         connection.execute(REGISTRATION_ATTEMPT_SCHEMA)
         connection.execute(REGISTRATION_ATTEMPT_INDEX)
+        connection.execute(PRIVATE_MESSAGE_SCHEMA)
+        private_message_table_sql = connection.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'private_messages'
+            """
+        ).fetchone()["sql"]
+
+        if "length(content) BETWEEN 1 AND 2000" in (
+            private_message_table_sql
+        ):
+            connection.execute(
+                "DROP INDEX IF EXISTS private_messages_conversation"
+            )
+            connection.execute(
+                "DROP INDEX IF EXISTS private_messages_unread"
+            )
+            connection.execute(
+                """
+                ALTER TABLE private_messages
+                RENAME TO private_messages_legacy
+                """
+            )
+            connection.execute(PRIVATE_MESSAGE_SCHEMA)
+            connection.execute(
+                """
+                INSERT INTO private_messages (
+                    id,
+                    sender_id,
+                    recipient_id,
+                    content,
+                    created_at,
+                    read_at
+                )
+                SELECT
+                    id,
+                    sender_id,
+                    recipient_id,
+                    content,
+                    created_at,
+                    read_at
+                FROM private_messages_legacy
+                """
+            )
+            connection.execute(
+                "DROP TABLE private_messages_legacy"
+            )
+
+        connection.execute(PRIVATE_MESSAGE_CONVERSATION_INDEX)
+        connection.execute(PRIVATE_MESSAGE_UNREAD_INDEX)
+        unencrypted_messages = connection.execute(
+            """
+            SELECT id, content
+            FROM private_messages
+            WHERE content NOT LIKE 'aes256ctr-hmacsha256:v1:%'
+            """
+        ).fetchall()
+
+        for message in unencrypted_messages:
+            connection.execute(
+                """
+                UPDATE private_messages
+                SET content = ?
+                WHERE id = ?
+                """,
+                (
+                    encrypt_message_content(message["content"]),
+                    message["id"],
+                ),
+            )
         connection.execute(AI_MESSAGE_SCHEMA)
         connection.execute(AI_MESSAGE_INDEX)
         connection.execute(MONITOR_SESSION_SCHEMA)
@@ -955,6 +1066,313 @@ def reject_registration_request(request_id):
             raise ValueError("Cererea nu mai există.")
 
         connection.commit()
+    finally:
+        connection.close()
+
+
+def list_message_contacts(user_id):
+    connection = open_database()
+
+    try:
+        contacts = connection.execute(
+            """
+            SELECT
+                users.id,
+                users.username,
+                users.role,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN messages.recipient_id = ?
+                             AND messages.sender_id = users.id
+                             AND messages.read_at IS NULL
+                            THEN 1
+                            ELSE 0
+                        END
+                    ),
+                    0
+                ) AS unread_count,
+                MAX(messages.id) AS last_message_id,
+                (
+                    SELECT recent.content
+                    FROM private_messages AS recent
+                    WHERE (
+                        recent.sender_id = ?
+                        AND recent.recipient_id = users.id
+                    ) OR (
+                        recent.sender_id = users.id
+                        AND recent.recipient_id = ?
+                    )
+                    ORDER BY recent.id DESC
+                    LIMIT 1
+                ) AS last_message,
+                (
+                    SELECT recent.created_at
+                    FROM private_messages AS recent
+                    WHERE (
+                        recent.sender_id = ?
+                        AND recent.recipient_id = users.id
+                    ) OR (
+                        recent.sender_id = users.id
+                        AND recent.recipient_id = ?
+                    )
+                    ORDER BY recent.id DESC
+                    LIMIT 1
+                ) AS last_message_at
+            FROM users
+            LEFT JOIN private_messages AS messages
+                ON (
+                    messages.sender_id = ?
+                    AND messages.recipient_id = users.id
+                ) OR (
+                    messages.sender_id = users.id
+                    AND messages.recipient_id = ?
+                )
+            WHERE users.is_active = 1
+              AND users.id != ?
+            GROUP BY users.id, users.username, users.role
+            ORDER BY
+                last_message_id IS NULL,
+                last_message_id DESC,
+                users.username COLLATE NOCASE
+            """,
+            (
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+            ),
+        ).fetchall()
+
+        serialized_contacts = []
+
+        for contact in contacts:
+            serialized_contact = dict(contact)
+            last_message = serialized_contact["last_message"]
+
+            if last_message is not None:
+                serialized_contact["last_message"] = (
+                    decrypt_message_content(last_message)
+                )
+
+            serialized_contacts.append(serialized_contact)
+
+        return serialized_contacts
+    finally:
+        connection.close()
+
+
+def find_active_message_contact(contact_id):
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                username,
+                role
+            FROM users
+            WHERE id = ?
+              AND is_active = 1
+            """,
+            (contact_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def create_private_message(sender_id, recipient_id, content):
+    if sender_id == recipient_id:
+        raise ValueError("Nu îți poți trimite mesaje singur.")
+
+    if not isinstance(content, str):
+        raise ValueError("Mesajul trebuie să fie text.")
+
+    normalized_content = content.strip()
+
+    if not normalized_content:
+        raise ValueError("Mesajul nu poate fi gol.")
+
+    if len(normalized_content) > 2000:
+        raise ValueError(
+            "Mesajul nu poate depăși 2000 de caractere."
+        )
+
+    connection = open_database()
+
+    try:
+        recipient = connection.execute(
+            """
+            SELECT id
+            FROM users
+            WHERE id = ?
+              AND is_active = 1
+            """,
+            (recipient_id,),
+        ).fetchone()
+
+        if recipient is None:
+            raise ValueError("Utilizatorul nu este disponibil.")
+
+        created_at = datetime.now(timezone.utc).isoformat()
+        cursor = connection.execute(
+            """
+            INSERT INTO private_messages (
+                sender_id,
+                recipient_id,
+                content,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                sender_id,
+                recipient_id,
+                encrypt_message_content(normalized_content),
+                created_at,
+            ),
+        )
+        connection.commit()
+
+        message = connection.execute(
+            """
+            SELECT
+                id,
+                sender_id,
+                recipient_id,
+                content,
+                created_at,
+                read_at
+            FROM private_messages
+            WHERE id = ?
+            """,
+            (cursor.lastrowid,),
+        ).fetchone()
+        serialized_message = dict(message)
+        serialized_message["content"] = normalized_content
+
+        return serialized_message
+    finally:
+        connection.close()
+
+
+def get_private_conversation(
+    user_id,
+    contact_id,
+    after_id=None,
+    limit=100,
+):
+    if user_id == contact_id:
+        raise ValueError("Conversația nu este disponibilă.")
+
+    connection = open_database()
+
+    try:
+        contact = connection.execute(
+            """
+            SELECT
+                id,
+                username,
+                role
+            FROM users
+            WHERE id = ?
+              AND is_active = 1
+            """,
+            (contact_id,),
+        ).fetchone()
+
+        if contact is None:
+            raise ValueError("Utilizatorul nu este disponibil.")
+
+        connection.execute(
+            """
+            UPDATE private_messages
+            SET read_at = ?
+            WHERE sender_id = ?
+              AND recipient_id = ?
+              AND read_at IS NULL
+            """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                contact_id,
+                user_id,
+            ),
+        )
+
+        parameters = [
+            user_id,
+            contact_id,
+            contact_id,
+            user_id,
+        ]
+
+        if after_id is None:
+            query = """
+                SELECT *
+                FROM (
+                    SELECT
+                        id,
+                        sender_id,
+                        recipient_id,
+                        content,
+                        created_at,
+                        read_at
+                    FROM private_messages
+                    WHERE (
+                        sender_id = ? AND recipient_id = ?
+                    ) OR (
+                        sender_id = ? AND recipient_id = ?
+                    )
+                    ORDER BY id DESC
+                    LIMIT ?
+                )
+                ORDER BY id ASC
+            """
+            parameters.append(limit)
+        else:
+            query = """
+                SELECT
+                    id,
+                    sender_id,
+                    recipient_id,
+                    content,
+                    created_at,
+                    read_at
+                FROM private_messages
+                WHERE (
+                    (
+                        sender_id = ? AND recipient_id = ?
+                    ) OR (
+                        sender_id = ? AND recipient_id = ?
+                    )
+                )
+                  AND id > ?
+                ORDER BY id ASC
+                LIMIT ?
+            """
+            parameters.extend((after_id, limit))
+
+        messages = connection.execute(
+            query,
+            parameters,
+        ).fetchall()
+        connection.commit()
+
+        decrypted_messages = []
+
+        for message in messages:
+            decrypted_message = dict(message)
+            decrypted_message["content"] = (
+                decrypt_message_content(message["content"])
+            )
+            decrypted_messages.append(decrypted_message)
+
+        return contact, decrypted_messages
     finally:
         connection.close()
 
