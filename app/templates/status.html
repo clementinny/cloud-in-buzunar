@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/status.css') }}?v=3"
+        href="{{ url_for('static', filename='css/status.css') }}?v=4"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/status.js') }}?v=3"
+        src="{{ url_for('static', filename='js/status.js') }}?v=4"
     ></script>
 </head>
 
@@ -130,6 +130,37 @@
 
             <p id="process-list-empty" class="backup-list-empty" hidden>
                 Android nu a expus niciun proces către Termux.
+            </p>
+
+            <div class="process-heading android-process-heading">
+                <div>
+                    <h3>Procese Android (root)</h3>
+                    <p id="android-process-note">
+                        Se verifică accesul root și activitatea întregului
+                        telefon.
+                    </p>
+                </div>
+            </div>
+
+            <div class="process-table-wrapper">
+                <table class="process-table android-process-table">
+                    <thead>
+                        <tr>
+                            <th>Proces</th>
+                            <th>PID</th>
+                            <th>CPU Android</th>
+                        </tr>
+                    </thead>
+                    <tbody id="android-process-list"></tbody>
+                </table>
+            </div>
+
+            <p
+                id="android-process-list-empty"
+                class="backup-list-empty"
+                hidden
+            >
+                Lista completă necesită permisiune root pentru Termux.
             </p>
         </section>
 

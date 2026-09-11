@@ -372,6 +372,14 @@
     font-size: 0.82rem;
 }
 
+.android-process-heading {
+    margin-top: 8px;
+}
+
+.android-process-table {
+    min-width: 480px;
+}
+
 .process-table-wrapper {
     overflow-x: auto;
     border: 1px solid var(--border);

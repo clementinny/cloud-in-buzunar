@@ -1,11 +1,77 @@
 import unittest
 from collections import namedtuple
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from app import resource_monitor
 
 
 class ResourceMonitorTest(unittest.TestCase):
+    def test_android_cpuinfo_processes_are_parsed_and_sorted(self):
+        output = """
+          3.2% 111/system_server: 2.0% user + 1.2% kernel
+          18% 222/com.example.camera: 12% user + 6% kernel
+          0.4% 333/kworker/0:1: 0% user + 0.4% kernel
+        """
+
+        processes = resource_monitor.parse_android_cpuinfo(output)
+
+        self.assertEqual(
+            processes,
+            [
+                {
+                    "pid": 222,
+                    "name": "com.example.camera",
+                    "cpu_percent": 18.0,
+                },
+                {
+                    "pid": 111,
+                    "name": "system_server",
+                    "cpu_percent": 3.2,
+                },
+                {
+                    "pid": 333,
+                    "name": "kworker/0:1",
+                    "cpu_percent": 0.4,
+                },
+            ],
+        )
+
+    def test_root_cpu_fallback_is_used_when_android_blocks_proc_stat(self):
+        cpu_line = "cpu  100 0 50 800 10 0 0 0\n"
+
+        with (
+            patch.object(
+                resource_monitor,
+                "read_cpu_totals",
+                side_effect=PermissionError,
+            ),
+            patch.object(
+                resource_monitor,
+                "is_termux_environment",
+                return_value=True,
+            ),
+            patch.object(
+                resource_monitor.shutil,
+                "which",
+                return_value="/system/xbin/su",
+            ),
+            patch.object(
+                resource_monitor.subprocess,
+                "run",
+                return_value=CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=cpu_line,
+                    stderr="",
+                ),
+            ),
+        ):
+            totals, source = resource_monitor.read_cpu_snapshot()
+
+        self.assertEqual(source, "root")
+        self.assertEqual(totals, (960, 810))
+
     def test_process_status_and_stat_are_parsed(self):
         status = resource_monitor.parse_process_status(
             "Name:\tllama-server\nUid:\t10271 10271 10271 10271\n"
@@ -134,6 +200,73 @@ class ResourceMonitorTest(unittest.TestCase):
         )
         self.assertEqual(payload["processes"][0]["ram_percent"], 20.0)
         self.assertEqual(payload["managed_services"][0]["id"], "ai")
+        self.assertEqual(payload["cpu"]["source"], "android")
+
+    def test_resource_snapshot_falls_back_to_termux_cpu_estimate(self):
+        process = {
+            "pid": 42,
+            "name": "Transmission",
+            "service_id": "transmission",
+            "rss_bytes": 1024,
+            "cpu_ticks": 0,
+            "start_ticks": 0,
+        }
+        process_after = {**process, "cpu_ticks": resource_monitor.CLOCK_TICKS}
+
+        with (
+            patch.object(
+                resource_monitor,
+                "read_meminfo",
+                return_value={"MemTotal": 1024, "MemAvailable": 512},
+            ),
+            patch.object(
+                resource_monitor,
+                "read_cpu_snapshot",
+                return_value=(None, None),
+            ),
+            patch.object(
+                resource_monitor,
+                "read_network_totals",
+                return_value={},
+            ),
+            patch.object(
+                resource_monitor,
+                "read_processes",
+                side_effect=[{42: process}, {42: process_after}],
+            ),
+            patch.object(
+                resource_monitor.time,
+                "monotonic",
+                side_effect=[10.0, 11.0],
+            ),
+            patch.object(resource_monitor.time, "sleep"),
+            patch.object(
+                resource_monitor.shutil,
+                "disk_usage",
+                return_value=namedtuple("Usage", "total used free")(
+                    100,
+                    25,
+                    75,
+                ),
+            ),
+            patch.object(
+                resource_monitor,
+                "read_gpu_status",
+                return_value={"available": False},
+            ),
+            patch.object(
+                resource_monitor,
+                "get_managed_services",
+                return_value=[],
+            ),
+        ):
+            payload = resource_monitor.collect_resource_usage(0.5)
+
+        self.assertEqual(payload["cpu"]["source"], "termux_estimate")
+        self.assertAlmostEqual(
+            payload["cpu"]["usage_percent"],
+            round(100 / resource_monitor.CPU_COUNT, 1),
+        )
 
 
 if __name__ == "__main__":

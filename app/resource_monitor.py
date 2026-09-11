@@ -1,5 +1,7 @@
 import os
+import re
 import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +16,12 @@ from app.service_control import (
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 PROC_ROOT = Path("/proc")
 CPU_COUNT = max(1, os.cpu_count() or 1)
+ROOT_COMMAND_TIMEOUT_SECONDS = 2
+ANDROID_CPUINFO_TIMEOUT_SECONDS = 5
+ANDROID_CPU_PROCESS_PATTERN = re.compile(
+    r"^\s*([0-9]+(?:\.[0-9]+)?)%\s+(\d+)/(.+?):\s+"
+    r"[0-9]+(?:\.[0-9]+)?%\s+(?:user|usr)\b"
+)
 
 try:
     CLOCK_TICKS = int(os.sysconf("SC_CLK_TCK"))
@@ -33,10 +41,8 @@ def read_meminfo(proc_root=PROC_ROOT):
     return values
 
 
-def read_cpu_totals(proc_root=PROC_ROOT):
-    first_line = (proc_root / "stat").read_text(
-        encoding="utf-8"
-    ).splitlines()[0]
+def parse_cpu_totals(text):
+    first_line = text.splitlines()[0]
     fields = first_line.split()
 
     if not fields or fields[0] != "cpu":
@@ -51,6 +57,134 @@ def read_cpu_totals(proc_root=PROC_ROOT):
     )
 
     return total_ticks, idle_ticks
+
+
+def read_cpu_totals(proc_root=PROC_ROOT):
+    return parse_cpu_totals(
+        (proc_root / "stat").read_text(encoding="utf-8")
+    )
+
+
+def is_termux_environment():
+    prefix = os.environ.get("PREFIX", "")
+    return "com.termux" in prefix or Path(
+        "/data/data/com.termux"
+    ).exists()
+
+
+def read_root_cpu_totals():
+    if not is_termux_environment():
+        raise OSError("Root CPU fallback is only used in Termux")
+
+    su_command = shutil.which("su")
+
+    if not su_command:
+        raise OSError("su is not available")
+
+    result = subprocess.run(
+        [su_command, "-c", "cat /proc/stat"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=ROOT_COMMAND_TIMEOUT_SECONDS,
+    )
+
+    if result.returncode != 0 or not result.stdout.strip():
+        raise OSError("Root access to CPU statistics failed")
+
+    return parse_cpu_totals(result.stdout)
+
+
+def read_cpu_snapshot():
+    try:
+        return read_cpu_totals(), "android"
+    except (OSError, ValueError, IndexError):
+        pass
+
+    try:
+        return read_root_cpu_totals(), "root"
+    except (
+        OSError,
+        ValueError,
+        IndexError,
+        subprocess.SubprocessError,
+    ):
+        return None, None
+
+
+def parse_android_cpuinfo(text):
+    processes = []
+
+    for line in text.splitlines():
+        match = ANDROID_CPU_PROCESS_PATTERN.match(line)
+
+        if not match:
+            continue
+
+        cpu_percent, pid, name = match.groups()
+        processes.append(
+            {
+                "pid": int(pid),
+                "name": name.strip(),
+                "cpu_percent": float(cpu_percent),
+            }
+        )
+
+    processes.sort(
+        key=lambda process: process["cpu_percent"],
+        reverse=True,
+    )
+    return processes
+
+
+def read_android_cpu_processes():
+    unavailable = {
+        "available": False,
+        "processes": [],
+        "note": (
+            "Acordă aplicației Termux acces root pentru a vedea "
+            "procesele întregului telefon."
+        ),
+    }
+
+    if not is_termux_environment():
+        return unavailable
+
+    su_command = shutil.which("su")
+
+    if not su_command:
+        return unavailable
+
+    try:
+        result = subprocess.run(
+            [su_command, "-c", "dumpsys cpuinfo"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=ANDROID_CPUINFO_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return unavailable
+
+    if result.returncode != 0:
+        return unavailable
+
+    processes = parse_android_cpuinfo(result.stdout)
+
+    if not processes:
+        return {
+            **unavailable,
+            "note": "Android nu a raportat momentan procese cu activitate CPU.",
+        }
+
+    return {
+        "available": True,
+        "processes": processes[:50],
+        "note": (
+            "Raport Android obținut cu root; include aplicațiile, "
+            "serviciile de sistem și procesele Termux."
+        ),
+    }
 
 
 def read_network_totals(proc_root=PROC_ROOT):
@@ -345,10 +479,7 @@ def collect_resource_usage(sample_seconds=0.3):
     except (OSError, ValueError, KeyError, IndexError):
         memory = {}
 
-    try:
-        first_cpu = read_cpu_totals()
-    except (OSError, ValueError, IndexError):
-        first_cpu = None
+    first_cpu, first_cpu_source = read_cpu_snapshot()
 
     try:
         first_network = read_network_totals()
@@ -361,10 +492,7 @@ def collect_resource_usage(sample_seconds=0.3):
     elapsed_seconds = max(0.001, time.monotonic() - started_at)
     second_processes = read_processes()
 
-    try:
-        second_cpu = read_cpu_totals()
-    except (OSError, ValueError, IndexError):
-        second_cpu = None
+    second_cpu, second_cpu_source = read_cpu_snapshot()
 
     try:
         second_network = read_network_totals()
@@ -429,11 +557,26 @@ def collect_resource_usage(sample_seconds=0.3):
     )
 
     cpu_percent = None
+    cpu_source = None
 
-    if first_cpu is not None and second_cpu is not None:
+    if (
+        first_cpu is not None
+        and second_cpu is not None
+        and first_cpu_source == second_cpu_source
+    ):
         total_delta = max(0, second_cpu[0] - first_cpu[0])
         idle_delta = max(0, second_cpu[1] - first_cpu[1])
         cpu_percent = calculate_percent(total_delta - idle_delta, total_delta)
+        cpu_source = second_cpu_source
+
+    visible_process_cpu_percent = min(
+        100.0,
+        sum(process["cpu_percent"] for process in processes) / CPU_COUNT,
+    )
+
+    if cpu_percent is None and processes:
+        cpu_percent = visible_process_cpu_percent
+        cpu_source = "termux_estimate"
 
     try:
         storage = shutil.disk_usage(DATA_DIR)
@@ -460,6 +603,19 @@ def collect_resource_usage(sample_seconds=0.3):
                 round(cpu_percent, 1) if cpu_percent is not None else None
             ),
             "logical_cores": CPU_COUNT,
+            "source": cpu_source,
+            "visible_process_usage_percent": round(
+                visible_process_cpu_percent,
+                1,
+            ),
+            "note": {
+                "android": "Utilizare totală raportată direct de Android.",
+                "root": "Utilizare totală citită cu permisiune root.",
+                "termux_estimate": (
+                    "Estimare din procesele vizibile în Termux; "
+                    "procesele Android din alte aplicații nu sunt incluse."
+                ),
+            }.get(cpu_source, "Utilizarea CPU nu poate fi citită."),
         },
         "memory": {
             "available": total_memory > 0,
@@ -483,6 +639,7 @@ def collect_resource_usage(sample_seconds=0.3):
             elapsed_seconds,
         ),
         "gpu": read_gpu_status(),
+        "android_cpu": read_android_cpu_processes(),
         "processes": processes[:50],
         "managed_services": get_managed_services(processes),
         "process_note": (

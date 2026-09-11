@@ -25,6 +25,11 @@ const managedServiceList = document.querySelector(
 const processList = document.querySelector("#process-list");
 const processListEmpty = document.querySelector("#process-list-empty");
 const processNote = document.querySelector("#process-note");
+const androidProcessList = document.querySelector("#android-process-list");
+const androidProcessListEmpty = document.querySelector(
+    "#android-process-list-empty",
+);
+const androidProcessNote = document.querySelector("#android-process-note");
 const resourceUpdated = document.querySelector("#resource-updated");
 
 const refreshIntervalMilliseconds = 10_000;
@@ -286,11 +291,14 @@ function renderResourceSummary(payload) {
     const temperatureCelsius = Number(temperature.celsius);
     const networkDown = Number(network.received_bytes_per_second) || 0;
     const networkUp = Number(network.sent_bytes_per_second) || 0;
+    const cpuIsEstimate = cpu.source === "termux_estimate";
     const cards = [
         createResourceCard(
-            "CPU total",
+            cpuIsEstimate ? "CPU Termux estimat" : "CPU total",
             cpu.available ? `${cpuPercent.toFixed(1)}%` : "Indisponibil",
-            `${cpu.logical_cores || "?"} nuclee logice`,
+            cpu.available
+                ? `${cpu.logical_cores || "?"} nuclee · ${cpu.note || ""}`
+                : (cpu.note || "Android nu a expus utilizarea"),
             usageState(cpuPercent),
         ),
         createResourceCard(
@@ -390,6 +398,36 @@ function renderProcesses() {
     processListEmpty.hidden = processes.length !== 0;
 }
 
+function renderAndroidProcesses(androidCpu) {
+    const processes = Array.isArray(androidCpu.processes)
+        ? androidCpu.processes
+        : [];
+    const rows = processes.map((process) => {
+        const row = document.createElement("tr");
+        const values = [
+            process.name,
+            String(process.pid),
+            `${Number(process.cpu_percent).toFixed(1)}%`,
+        ];
+
+        for (const value of values) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.append(cell);
+        }
+
+        return row;
+    });
+
+    androidProcessList.replaceChildren(...rows);
+    androidProcessListEmpty.hidden = processes.length !== 0;
+    androidProcessNote.textContent = androidCpu.note || (
+        androidCpu.available
+            ? "Procese raportate de Android prin root."
+            : "Lista completă nu este disponibilă."
+    );
+}
+
 async function setManagedService(service, enabled) {
     if (
         !enabled &&
@@ -464,6 +502,7 @@ function renderManagedServices(services) {
 
 function renderResources(payload) {
     renderResourceSummary(payload);
+    renderAndroidProcesses(payload.android_cpu || {});
     latestProcesses = Array.isArray(payload.processes)
         ? payload.processes
         : [];
