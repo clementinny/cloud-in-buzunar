@@ -86,7 +86,7 @@ class CloudMigrationTests(unittest.TestCase):
             for member in source.getmembers():
                 content = source.extractfile(member).read()
                 if member.name == "payload/config/autostart.conf":
-                    content = b"START_WEB=false\n"
+                    content = bytes([content[0] ^ 1]) + content[1:]
                     member.size = len(content)
                 target.addfile(member, io.BytesIO(content))
 
