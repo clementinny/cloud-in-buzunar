@@ -132,6 +132,26 @@ const registrationRequestsList = document.querySelector(
 const refreshRegistrationRequestsButton = document.querySelector(
     "#refresh-registration-requests",
 );
+const manageSharesButton = document.querySelector(
+    "#manage-shares-button",
+);
+const shareDialog = document.querySelector("#share-dialog");
+const shareForm = document.querySelector("#share-form");
+const shareFileName = document.querySelector("#share-file-name");
+const shareExpiry = document.querySelector("#share-expiry");
+const shareDownloadLimit = document.querySelector(
+    "#share-download-limit",
+);
+const shareError = document.querySelector("#share-error");
+const createdShare = document.querySelector("#created-share");
+const createdShareUrl = document.querySelector("#created-share-url");
+const copyShareUrlButton = document.querySelector("#copy-share-url");
+const cancelShareButton = document.querySelector("#cancel-share-button");
+const createShareButton = document.querySelector("#create-share-button");
+const sharesDialog = document.querySelector("#shares-dialog");
+const closeSharesButton = document.querySelector("#close-shares-button");
+const sharesMessage = document.querySelector("#shares-message");
+const sharesList = document.querySelector("#shares-list");
 let currentUser = null;
 
 let currentPath = "";
@@ -145,6 +165,7 @@ const maximumUploadSize = 100 * 1024 * 1024;
 let selectedFile = null;
 
 let entryBeingRenamed = null;
+let entryBeingShared = null;
 let unreadMessagesLoading = false;
 
 function formatBytes(bytes) {
@@ -855,6 +876,151 @@ async function deleteFolder(relativePath) {
     return response.json();
 }
 
+function getVisibleVaultOwnerId() {
+    if (vaultMode === "admin") {
+        return selectedVaultUserId;
+    }
+
+    return currentUser?.id ?? null;
+}
+
+async function createTemporaryShare(entry, expiryHours, maxDownloads) {
+    const payload = {
+        path: entry.path,
+        expiry_hours: expiryHours,
+        max_downloads: maxDownloads,
+    };
+    const ownerUserId = getVisibleVaultOwnerId();
+
+    if (vaultMode === "admin") {
+        payload.owner_user_id = ownerUserId;
+    }
+
+    const response = await fetch("/api/shares", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(
+            data?.error ??
+            `Linkul nu a putut fi creat: HTTP ${response.status}`,
+        );
+    }
+
+    return data;
+}
+
+function formatShareDate(value) {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "dată necunoscută";
+    }
+
+    return date.toLocaleString("ro-RO", {
+        dateStyle: "short",
+        timeStyle: "short",
+    });
+}
+
+function renderShares(shares) {
+    sharesList.replaceChildren();
+
+    if (shares.length === 0) {
+        sharesMessage.textContent = "Nu există linkuri pentru acest seif.";
+        return;
+    }
+
+    sharesMessage.textContent = `${shares.length} linkuri create.`;
+
+    for (const share of shares) {
+        const row = document.createElement("li");
+        const information = document.createElement("div");
+        const name = document.createElement("strong");
+        const details = document.createElement("span");
+        const state = document.createElement("span");
+        const actions = document.createElement("div");
+        const revokeButton = document.createElement("button");
+        const limit = share.max_downloads === null
+            ? "nelimitat"
+            : `${share.download_count}/${share.max_downloads}`;
+        const inactive = share.revoked || share.expired || share.exhausted;
+
+        row.className = "share-row";
+        information.className = "share-information";
+        details.className = "share-details";
+        state.className = "share-state";
+        actions.className = "share-actions";
+        name.textContent = share.file_name;
+        details.textContent =
+            `Expiră: ${formatShareDate(share.expires_at)} · ` +
+            `descărcări: ${limit}`;
+        state.textContent = share.revoked
+            ? "Revocat"
+            : share.expired
+                ? "Expirat"
+                : share.exhausted
+                    ? "Limită atinsă"
+                    : "Activ";
+        revokeButton.type = "button";
+        revokeButton.className = "share-revoke-button";
+        revokeButton.textContent = inactive ? "Indisponibil" : "Revocă";
+        revokeButton.disabled = inactive;
+
+        revokeButton.addEventListener("click", async () => {
+            if (!window.confirm(`Revoci linkul pentru „${share.file_name}”?`)) {
+                return;
+            }
+
+            revokeButton.disabled = true;
+
+            try {
+                const response = await fetch(`/api/shares/${share.id}`, {
+                    method: "DELETE",
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Revocarea a eșuat: HTTP ${response.status}`);
+                }
+
+                await loadShares();
+            } catch (error) {
+                sharesMessage.textContent = error.message;
+                revokeButton.disabled = false;
+            }
+        });
+
+        information.append(name, details, state);
+        actions.append(revokeButton);
+        row.append(information, actions);
+        sharesList.append(row);
+    }
+}
+
+async function loadShares() {
+    const ownerUserId = getVisibleVaultOwnerId();
+    const query = new URLSearchParams();
+
+    if (ownerUserId !== null) {
+        query.set("owner_user_id", String(ownerUserId));
+    }
+
+    const response = await fetch(`/api/shares?${query.toString()}`);
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(
+            data?.error ??
+            `Linkurile nu pot fi încărcate: HTTP ${response.status}`,
+        );
+    }
+
+    renderShares(data.shares);
+}
+
 function renderFiles(entries) {
     fileList.replaceChildren();
 
@@ -965,6 +1131,24 @@ if (entry.type === "file") {
     );
 
     actions.append(downloadButton);
+
+    const shareButton = document.createElement("button");
+
+    shareButton.className = "file-open-button share-button";
+    shareButton.textContent = "Partajează";
+    shareButton.type = "button";
+    shareButton.addEventListener("click", () => {
+        entryBeingShared = entry;
+        shareFileName.textContent = entry.name;
+        shareForm.reset();
+        shareExpiry.value = "24";
+        shareError.hidden = true;
+        createdShare.hidden = true;
+        createShareButton.hidden = false;
+        shareDialog.showModal();
+    });
+
+    actions.append(shareButton);
 }
 
 const renameButton =
@@ -1092,6 +1276,7 @@ function showDisconnectedState() {
     adminVaultButton.classList.remove("is-active");
 
     folderToolbar.hidden = true;
+    manageSharesButton.hidden = true;
     folderBreadcrumbs.replaceChildren();
     newFolderButton.hidden = false;
 
@@ -1123,6 +1308,7 @@ function showConnectedState(fileCount) {
 
     vaultModeSwitch.hidden =
         currentUser.role !== "admin";
+    manageSharesButton.hidden = false;
 
     if (vaultMode === "admin") {
         const ownerName =
@@ -1591,6 +1777,84 @@ renameForm.addEventListener(
         }
     },
 );
+
+shareForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (entryBeingShared === null) {
+        return;
+    }
+
+    const limitValue = shareDownloadLimit.value.trim();
+    const maxDownloads = limitValue === ""
+        ? null
+        : Number.parseInt(limitValue, 10);
+
+    shareError.hidden = true;
+    createShareButton.disabled = true;
+    createShareButton.textContent = "Se creează...";
+
+    try {
+        const result = await createTemporaryShare(
+            entryBeingShared,
+            Number.parseInt(shareExpiry.value, 10),
+            maxDownloads,
+        );
+        createdShareUrl.value = new URL(result.url, window.location.origin).href;
+        createdShare.hidden = false;
+        createShareButton.hidden = true;
+        createdShareUrl.select();
+    } catch (error) {
+        shareError.textContent = error.message;
+        shareError.hidden = false;
+    } finally {
+        createShareButton.disabled = false;
+        createShareButton.textContent = "Creează linkul";
+    }
+});
+
+cancelShareButton.addEventListener("click", () => {
+    shareDialog.close();
+});
+
+shareDialog.addEventListener("close", () => {
+    shareForm.reset();
+    entryBeingShared = null;
+    createdShare.hidden = true;
+    createdShareUrl.value = "";
+    createShareButton.hidden = false;
+    shareError.hidden = true;
+});
+
+copyShareUrlButton.addEventListener("click", async () => {
+    try {
+        await navigator.clipboard.writeText(createdShareUrl.value);
+        copyShareUrlButton.textContent = "Copiat";
+    } catch (error) {
+        createdShareUrl.select();
+        copyShareUrlButton.textContent = "Selectat";
+    }
+
+    window.setTimeout(() => {
+        copyShareUrlButton.textContent = "Copiază";
+    }, 1800);
+});
+
+manageSharesButton.addEventListener("click", async () => {
+    sharesList.replaceChildren();
+    sharesMessage.textContent = "Se încarcă...";
+    sharesDialog.showModal();
+
+    try {
+        await loadShares();
+    } catch (error) {
+        sharesMessage.textContent = error.message;
+    }
+});
+
+closeSharesButton.addEventListener("click", () => {
+    sharesDialog.close();
+});
 
 fileInput.addEventListener("change", () => {
     const file = fileInput.files[0];

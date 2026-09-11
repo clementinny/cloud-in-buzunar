@@ -848,3 +848,137 @@ progress::-moz-progress-bar {
         flex: 1;
     }
 }
+
+.share-button {
+    color: #cffafe;
+    border-color: rgba(34, 211, 238, 0.45);
+    background: rgba(8, 145, 178, 0.16);
+}
+
+#share-form select,
+#share-form input,
+.created-share input {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    color: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    outline: none;
+    background: #0f172a;
+}
+
+#share-form select:focus,
+#share-form input:focus,
+.created-share input:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+
+.created-share {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid rgba(34, 211, 238, 0.4);
+    border-radius: 14px;
+    background: rgba(8, 145, 178, 0.1);
+}
+
+.created-share[hidden] {
+    display: none;
+}
+
+.created-share > div {
+    display: flex;
+    gap: 8px;
+}
+
+.created-share small,
+.share-details,
+.share-state {
+    color: var(--muted);
+}
+
+.wide-dialog {
+    width: min(760px, calc(100% - 32px));
+}
+
+.shares-dialog-content {
+    display: grid;
+    gap: 16px;
+}
+
+.shares-dialog-heading,
+.share-row,
+.share-actions {
+    display: flex;
+    align-items: center;
+}
+
+.shares-dialog-heading,
+.share-row {
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.shares-dialog-heading h2,
+.shares-dialog-heading p,
+#shares-message {
+    margin: 0;
+}
+
+.shares-list {
+    display: grid;
+    gap: 10px;
+    max-height: 58vh;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.share-row {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.share-information {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+}
+
+.share-information strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.share-actions {
+    flex-shrink: 0;
+}
+
+.share-revoke-button {
+    color: #fecaca;
+    border-color: rgba(239, 68, 68, 0.45);
+    background: rgba(127, 29, 29, 0.22);
+}
+
+@media (max-width: 620px) {
+    .created-share > div,
+    .shares-dialog-heading,
+    .share-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .folder-toolbar-actions {
+        flex-wrap: wrap;
+    }
+
+    #manage-shares-button {
+        flex-basis: 100%;
+    }
+}

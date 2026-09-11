@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=21"
+    href="{{ url_for('static', filename='css/app.css') }}?v=22"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=21"
+    src="{{ url_for('static', filename='js/app.js') }}?v=22"
     defer
 ></script>
 </head>
@@ -203,6 +203,15 @@
     ></nav>
 
     <div class="folder-toolbar-actions">
+        <button
+            id="manage-shares-button"
+            class="secondary-button"
+            type="button"
+            hidden
+        >
+            Linkuri partajate
+        </button>
+
         <button
             id="back-folder-button"
             class="secondary-button"
@@ -496,6 +505,84 @@
             </button>
         </div>
     </form>
+</dialog>
+
+<dialog id="share-dialog">
+    <form id="share-form">
+        <div>
+            <p class="dialog-label">Partajare temporară</p>
+            <h2>Creează un link</h2>
+            <p id="share-file-name" class="dialog-description"></p>
+        </div>
+
+        <label for="share-expiry">Linkul expiră după</label>
+        <select id="share-expiry" required>
+            <option value="1">1 oră</option>
+            <option value="6">6 ore</option>
+            <option value="24" selected>24 de ore</option>
+            <option value="72">3 zile</option>
+            <option value="168">7 zile</option>
+            <option value="720">30 de zile</option>
+        </select>
+
+        <label for="share-download-limit">
+            Număr maxim de descărcări (opțional)
+        </label>
+        <input
+            id="share-download-limit"
+            type="number"
+            min="1"
+            max="10000"
+            inputmode="numeric"
+            placeholder="Nelimitat"
+        >
+
+        <p id="share-error" class="form-error" role="alert" hidden></p>
+
+        <div id="created-share" class="created-share" hidden>
+            <label for="created-share-url">Linkul creat</label>
+            <div>
+                <input id="created-share-url" type="text" readonly>
+                <button id="copy-share-url" type="button">Copiază</button>
+            </div>
+            <small>
+                Linkul este afișat o singură dată. Păstrează-l acum.
+            </small>
+        </div>
+
+        <div class="dialog-actions">
+            <button
+                id="cancel-share-button"
+                class="secondary-button"
+                type="button"
+            >
+                Închide
+            </button>
+            <button id="create-share-button" type="submit">
+                Creează linkul
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="shares-dialog" class="wide-dialog">
+    <div class="shares-dialog-content">
+        <div class="shares-dialog-heading">
+            <div>
+                <p class="dialog-label">File Vault</p>
+                <h2>Linkuri partajate</h2>
+            </div>
+            <button
+                id="close-shares-button"
+                class="secondary-button"
+                type="button"
+            >
+                Închide
+            </button>
+        </div>
+        <p id="shares-message" class="dialog-description"></p>
+        <ul id="shares-list" class="shares-list"></ul>
+    </div>
 </dialog>
 
 </body>

@@ -297,6 +297,37 @@ CREATE INDEX IF NOT EXISTS system_metrics_timeline
 ON system_metrics (recorded_at, id)
 """
 
+FILE_SHARE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS file_shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    created_by_user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    relative_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    max_downloads INTEGER
+        CHECK (max_downloads IS NULL OR max_downloads > 0),
+    download_count INTEGER NOT NULL DEFAULT 0
+        CHECK (download_count >= 0),
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    last_downloaded_at TEXT,
+    FOREIGN KEY (owner_user_id)
+        REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_user_id)
+        REFERENCES users(id) ON DELETE CASCADE
+)
+"""
+FILE_SHARE_TOKEN_INDEX = """
+CREATE UNIQUE INDEX IF NOT EXISTS file_shares_token
+ON file_shares (token_hash)
+"""
+FILE_SHARE_OWNER_INDEX = """
+CREATE INDEX IF NOT EXISTS file_shares_owner
+ON file_shares (owner_user_id, created_at DESC)
+"""
+
 
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -486,6 +517,9 @@ def initialize_database():
         connection.execute(MONITOR_RECORDING_INDEX)
         connection.execute(SYSTEM_METRIC_SCHEMA)
         connection.execute(SYSTEM_METRIC_INDEX)
+        connection.execute(FILE_SHARE_SCHEMA)
+        connection.execute(FILE_SHARE_TOKEN_INDEX)
+        connection.execute(FILE_SHARE_OWNER_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -2407,5 +2441,183 @@ def find_monitor_device_by_token_hash(token_hash):
         )
         connection.commit()
         return device
+    finally:
+        connection.close()
+
+
+def create_file_share(
+    owner_user_id,
+    created_by_user_id,
+    token_hash,
+    relative_path,
+    file_name,
+    expires_at,
+    max_downloads=None,
+):
+    created_at = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            INSERT INTO file_shares (
+                owner_user_id,
+                created_by_user_id,
+                token_hash,
+                relative_path,
+                file_name,
+                expires_at,
+                max_downloads,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                owner_user_id,
+                created_by_user_id,
+                token_hash,
+                relative_path,
+                file_name,
+                expires_at,
+                max_downloads,
+                created_at,
+            ),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    finally:
+        connection.close()
+
+
+def list_file_shares(owner_user_id=None):
+    connection = open_database()
+
+    try:
+        parameters = ()
+        where_clause = ""
+
+        if owner_user_id is not None:
+            where_clause = "WHERE file_shares.owner_user_id = ?"
+            parameters = (owner_user_id,)
+
+        return connection.execute(
+            f"""
+            SELECT
+                file_shares.id,
+                file_shares.owner_user_id,
+                file_shares.created_by_user_id,
+                file_shares.file_name,
+                file_shares.expires_at,
+                file_shares.max_downloads,
+                file_shares.download_count,
+                file_shares.created_at,
+                file_shares.revoked_at,
+                file_shares.last_downloaded_at,
+                owners.username AS owner_username,
+                creators.username AS creator_username
+            FROM file_shares
+            JOIN users AS owners
+              ON owners.id = file_shares.owner_user_id
+            JOIN users AS creators
+              ON creators.id = file_shares.created_by_user_id
+            {where_clause}
+            ORDER BY file_shares.created_at DESC, file_shares.id DESC
+            """,
+            parameters,
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def find_file_share(share_id):
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT *
+            FROM file_shares
+            WHERE id = ?
+            """,
+            (share_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def revoke_file_share(share_id):
+    revoked_at = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE file_shares
+            SET revoked_at = COALESCE(revoked_at, ?)
+            WHERE id = ?
+            """,
+            (revoked_at, share_id),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
+
+
+def claim_file_share_download(token_hash):
+    """Atomically validate a share and reserve one download."""
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        share = connection.execute(
+            """
+            SELECT file_shares.*
+            FROM file_shares
+            JOIN users
+              ON users.id = file_shares.owner_user_id
+            WHERE file_shares.token_hash = ?
+              AND file_shares.revoked_at IS NULL
+              AND file_shares.expires_at > ?
+              AND users.is_active = 1
+              AND (
+                  file_shares.max_downloads IS NULL
+                  OR file_shares.download_count
+                     < file_shares.max_downloads
+              )
+            """,
+            (token_hash, now),
+        ).fetchone()
+
+        if share is None:
+            connection.rollback()
+            return None
+
+        cursor = connection.execute(
+            """
+            UPDATE file_shares
+            SET download_count = download_count + 1,
+                last_downloaded_at = ?
+            WHERE id = ?
+              AND revoked_at IS NULL
+              AND expires_at > ?
+              AND (
+                  max_downloads IS NULL
+                  OR download_count < max_downloads
+              )
+            """,
+            (now, share["id"], now),
+        )
+
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return None
+
+        connection.commit()
+        return share
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
