@@ -26,11 +26,17 @@ WATCHDOG_INTERVAL_SECONDS=60
 
 mkdir -p "$LOG_DIR" "$RUNTIME_DIR"
 
-if [ -f "$CONFIG_FILE" ]; then
-    # This file is owned and editable only by the Termux user.
-    # shellcheck source=/dev/null
-    source "$CONFIG_FILE"
-fi
+
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        # This file is owned and editable only by the Termux user.
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+    fi
+}
+
+
+load_config
 
 
 log_message() {
@@ -397,6 +403,8 @@ run_watchdog() {
     log_message INFO "Watchdog-ul monitorizează serviciile."
 
     while true; do
+        load_config
+
         if [ "$START_SSHD" = true ] \
             && ! process_matches '(^|/)sshd( |$)'; then
             log_message WARN "sshd s-a oprit; se încearcă repornirea."
