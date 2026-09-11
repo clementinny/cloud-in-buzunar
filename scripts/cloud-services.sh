@@ -15,12 +15,14 @@ WATCHDOG_LOG="$LOG_DIR/cloud-watchdog.log"
 BACKUP_LOG="$LOG_DIR/backup.log"
 THERMAL_LOG="$LOG_DIR/thermal-guardian.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
+HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
 
 START_SSHD=true
 START_WEB=true
 START_ARIA2=true
 START_TRANSMISSION=true
 START_AI=false
+START_HTTPS=false
 BACKUP_ENABLED=true
 BACKUP_KEEP=3
 BACKUP_INTERVAL_HOURS=24
@@ -98,6 +100,12 @@ ai_is_healthy() {
 }
 
 
+https_is_healthy() {
+    [ -x "$HTTPS_MANAGER" ] \
+        && "$HTTPS_MANAGER" status >/dev/null 2>&1
+}
+
+
 thermal_service_is_suspended() {
     [ -f "$THERMAL_SUSPENDED_DIR/$1" ]
 }
@@ -158,6 +166,7 @@ start_web() {
         --threads 4 \
         --timeout 180 \
         --access-logfile "$LOG_DIR/gunicorn-access.log" \
+        --access-logformat '%(h)s %(s)s %(L)s' \
         --error-logfile "$LOG_DIR/gunicorn-error.log" \
         app.main:app \
         >/dev/null 2>&1 &
@@ -354,12 +363,51 @@ stop_ai() {
 }
 
 
+start_https() {
+    [ "$START_HTTPS" = true ] || return 0
+
+    if https_is_healthy; then
+        return 0
+    fi
+
+    if [ ! -x "$HTTPS_MANAGER" ]; then
+        log_message WARN "Managerul HTTPS lipsește."
+        return 1
+    fi
+
+    if "$HTTPS_MANAGER" start >> "$LOG_DIR/https-autostart.log" 2>&1; then
+        log_message INFO "Proxy-ul HTTPS a fost pornit."
+        return 0
+    fi
+
+    log_message ERROR "Proxy-ul HTTPS nu a putut fi pornit."
+    return 1
+}
+
+
+stop_https() {
+    if [ ! -x "$HTTPS_MANAGER" ]; then
+        log_message WARN "Managerul HTTPS lipsește."
+        return 1
+    fi
+
+    if "$HTTPS_MANAGER" stop >> "$LOG_DIR/https-autostart.log" 2>&1; then
+        log_message INFO "Proxy-ul HTTPS a fost oprit intenționat."
+        return 0
+    fi
+
+    log_message ERROR "Proxy-ul HTTPS nu a putut fi oprit."
+    return 1
+}
+
+
 start_all() {
     start_sshd || true
     start_web || true
     start_aria2 || true
     start_transmission || true
     start_ai || true
+    start_https || true
 }
 
 
@@ -399,6 +447,11 @@ restart_ai() {
     "$PYTHON" -m app.ai_runtime stop \
         >> "$LOG_DIR/ai-autostart.log" 2>&1 || true
     start_ai
+}
+
+
+restart_https() {
+    "$HTTPS_MANAGER" restart >> "$LOG_DIR/https-autostart.log" 2>&1
 }
 
 
@@ -480,6 +533,7 @@ run_watchdog() {
     local aria_failures=0
     local transmission_failures=0
     local ai_failures=0
+    local https_failures=0
     local last_backup_check=0
     local current_time
 
@@ -557,6 +611,20 @@ run_watchdog() {
             fi
         fi
 
+        if [ "$START_HTTPS" = true ]; then
+            if https_is_healthy; then
+                https_failures=0
+            else
+                https_failures=$((https_failures + 1))
+
+                if [ "$https_failures" -ge 3 ]; then
+                    log_message WARN "Proxy-ul HTTPS nu răspunde; se repornește."
+                    restart_https || true
+                    https_failures=0
+                fi
+            fi
+        fi
+
         current_time="$(date +%s)"
 
         if [ $((current_time - last_backup_check)) -ge 3600 ]; then
@@ -581,6 +649,8 @@ print_service_status() {
         "$(port_responds 9091 && echo online || echo offline)"
     printf '  AI:           %s\n' \
         "$(ai_is_healthy && echo online || echo offline)"
+    printf '  HTTPS:        %s\n' \
+        "$(https_is_healthy && echo online || echo offline)"
     printf '  Watchdog:     %s\n' \
         "$(watchdog_is_running && echo online || echo offline)"
     printf '  Protecție termică: %s\n' \
@@ -628,9 +698,15 @@ case "${1:-}" in
     ai-stop)
         stop_ai
         ;;
+    https-start)
+        start_https
+        ;;
+    https-stop)
+        stop_https
+        ;;
     *)
         printf '%s\n' \
-            "Utilizare: $0 {start|boot|watchdog|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop}"
+            "Utilizare: $0 {start|boot|watchdog|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop}"
         exit 1
         ;;
 esac
