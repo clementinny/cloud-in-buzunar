@@ -1,5 +1,7 @@
 # CloudInBuzunar
 
+[![Tests](https://github.com/clementinny/cloud-in-buzunar/actions/workflows/tests.yml/badge.svg)](https://github.com/clementinny/cloud-in-buzunar/actions/workflows/tests.yml)
+
 A self-hosted personal cloud platform running on Android through Termux.
 It combines secure file storage, encrypted private messaging, media
 management, background downloads, local AI and administrative tools in one
@@ -14,6 +16,7 @@ responsive web dashboard.
 - Runs on an Android phone as a small home server
 - Multi-user authentication with administrator and user roles
 - Isolated file vault for every user
+- Expiring public file links with optional download limits
 - Full administrative management of all user vaults
 - Personal media library with resumable large-file uploads
 - HTTP, HTTPS, magnet and `.torrent` download management
@@ -30,6 +33,9 @@ responsive web dashboard.
 - Root-aware battery health and supported charge-limit controls
 - Safe dashboard controls for AI, aria2 and Transmission
 - Termux:Boot autostart, watchdog and daily backup supervision
+- Caddy HTTPS reverse proxy for LAN, VPN or a public domain
+- Portable, checksum-verified migration archives for another phone
+- Automated Python, JavaScript and shell checks on every GitHub change
 - Responsive interface built without a frontend framework
 
 ## Features
@@ -54,6 +60,12 @@ responsive web dashboard.
 - Recursive folder deletion with confirmation
 - Safe path resolution to prevent directory traversal
 - Administrator access to manage every user vault
+- Temporary links that can expire, be download-limited and revoked
+
+Public share tokens are generated from 256 bits of randomness and only their
+SHA-256 hashes are stored in SQLite. Share them only through HTTPS or an
+already trusted private VPN; anyone who has an active link can download its
+file until the link expires, reaches its limit or is revoked.
 
 ### Private messaging
 
@@ -224,8 +236,12 @@ app/
 ├── static/             JavaScript and CSS
 └── templates/          HTML templates
 scripts/
-├── cloud-services.sh           Service manager and watchdog
-└── install-termux-autostart.sh Termux:Boot installer
+├── cloud-services.sh              Service manager and watchdog
+├── install-termux-autostart.sh    Termux:Boot installer
+├── install-cloud-in-buzunar.sh    Complete Termux installer
+├── cloud-migrate.py               Portable export, verify and import
+├── configure-https.sh             Safe Caddy configuration generator
+└── cloud-https.sh                 HTTPS proxy process manager
 ```
 
 The native companion lives separately:
@@ -255,6 +271,19 @@ After installation:
 
 The core application requires Python and SQLite. The target environment is
 Termux/Linux.
+
+For a new Android/Termux aarch64 phone, the guided one-command setup installs
+the packages, creates the virtual environment and database, configures aria2,
+creates the first administrator and enables Termux:Boot:
+
+```bash
+chmod +x scripts/*.sh
+scripts/install-cloud-in-buzunar.sh --without-ai --admin YOUR_USERNAME
+```
+
+The password is requested without being printed. Use `--with-ai` only when the
+phone has enough memory and cooling. The manual equivalent remains available
+below for development or non-Termux environments.
 
 ```bash
 git clone <repository-url>
@@ -301,6 +330,80 @@ not included in the repository.
 
 Speech-activity markers use local FFmpeg audio analysis. On Termux, enable
 them with `pkg install ffmpeg`; recordings still work when FFmpeg is absent.
+
+## HTTPS reverse proxy
+
+Caddy terminates HTTPS and forwards normal HTTP and WebSocket traffic to
+Gunicorn on `127.0.0.1:8080`. It is available directly from the Termux package
+repository:
+
+```bash
+pkg install caddy
+chmod +x scripts/configure-https.sh scripts/cloud-https.sh
+scripts/configure-https.sh \
+  --host PHONE_VPN_NAME_OR_IP \
+  --mode internal \
+  --start
+```
+
+The default address is `https://PHONE_VPN_NAME_OR_IP:8443`, avoiding a root
+process merely to bind port 443. In `internal` mode, install Caddy's generated
+root certificate once on each trusted client; its exact path is printed by the
+configurator. The HTTPS service is then supervised by the existing watchdog
+and starts with Termux:Boot.
+
+For a public domain, use `--mode automatic`. DNS must point to the home public
+address and the router must forward external TCP 443 to the chosen local HTTPS
+port. Do not expose Gunicorn's port 8080 to the internet. A supplied PEM
+certificate and key can instead be selected with `--mode certificate --cert
+FILE --key FILE`.
+
+Inspect or stop the proxy with:
+
+```bash
+scripts/cloud-https.sh status
+scripts/cloud-https.sh stop
+```
+
+## Move the server to another phone
+
+Create a compact migration containing the database, user vaults, encryption
+keys and service configuration:
+
+```bash
+./.venv/bin/python scripts/cloud-migrate.py export
+```
+
+Models, media and monitor recordings are intentionally excluded by default.
+Include any of them explicitly when enough transfer space is available:
+
+```bash
+./.venv/bin/python scripts/cloud-migrate.py export \
+  --include-models \
+  --include-media \
+  --include-recordings
+```
+
+Copy the resulting `.tar.gz` file to the new phone, clone this repository and
+run the complete installer with `--import`:
+
+```bash
+scripts/install-cloud-in-buzunar.sh \
+  --without-ai \
+  --import /absolute/path/to/cloud-in-buzunar-migration-TIMESTAMP.tar.gz
+```
+
+Every archived file is checked against the SHA-256 manifest before extraction.
+The importer rejects traversal paths, links, duplicate entries and unexpected
+files, asks for exact confirmation and creates safety backups before replacing
+the current state.
+
+## Automated checks
+
+`.github/workflows/tests.yml` runs on every push and pull request. Python tests
+and compilation run in parallel with JavaScript syntax validation; shell
+scripts are checked with `bash -n`. The Android APK keeps its separate build
+workflow so normal backend changes do not rebuild the companion unnecessarily.
 
 ## Automatic startup and recovery
 
