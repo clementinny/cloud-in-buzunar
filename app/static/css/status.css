@@ -225,6 +225,146 @@
     text-align: right;
 }
 
+.backup-restore-panel {
+    display: grid;
+    gap: 18px;
+}
+
+.backup-restore-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.backup-restore-heading h2,
+.backup-restore-heading p,
+.backup-information h3,
+.backup-information p {
+    margin: 0;
+}
+
+.backup-restore-heading > div {
+    display: grid;
+    gap: 6px;
+}
+
+.backup-restore-heading > div > p:last-child,
+.backup-metadata,
+.backup-list-empty {
+    color: var(--muted);
+}
+
+.status-section-label {
+    color: var(--accent-light);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.restore-warning {
+    display: grid;
+    gap: 4px;
+    padding: 14px 16px;
+    color: #fde68a;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 14px;
+    background: rgba(133, 77, 14, 0.18);
+}
+
+.restore-warning span {
+    color: #d6c894;
+}
+
+#backup-action-status {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+}
+
+#backup-action-status.is-success {
+    color: #a7f3d0;
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    background: rgba(6, 78, 59, 0.24);
+}
+
+#backup-action-status.is-error {
+    color: #fecdd3;
+    border: 1px solid rgba(251, 113, 133, 0.35);
+    background: rgba(127, 29, 29, 0.3);
+}
+
+.backup-list {
+    display: grid;
+    gap: 10px;
+}
+
+.backup-row {
+    display: flex;
+    min-height: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.52);
+}
+
+.backup-row:hover {
+    transform: none;
+}
+
+.backup-information {
+    min-width: 0;
+}
+
+.backup-information h3 {
+    overflow-wrap: anywhere;
+}
+
+.backup-metadata {
+    margin-top: 5px;
+    font-size: 0.9rem;
+}
+
+.backup-properties {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.backup-properties span {
+    padding: 4px 8px;
+    color: #cbd5e1;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.12);
+}
+
+.backup-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+}
+
+.backup-actions .danger-button {
+    color: #fecdd3;
+    border-color: rgba(251, 113, 133, 0.5);
+    background: rgba(127, 29, 29, 0.35);
+}
+
+.backup-list-empty {
+    margin: 0;
+    padding: 24px;
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: 14px;
+}
+
 .status-legend {
     display: grid;
     gap: 14px;
@@ -284,5 +424,16 @@
 
     .service-card {
         min-height: 0;
+    }
+
+    .backup-restore-heading,
+    .backup-row,
+    .backup-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .backup-actions button {
+        width: 100%;
     }
 }

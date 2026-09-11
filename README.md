@@ -106,9 +106,27 @@ Available operations include:
 
 - Manual or scheduled local backups
 - Configurable backup retention
-- SQLite database, configuration and user vaults included
+- SQLite database, user vaults and message-encryption key included
+- Administrator-only backup list in the system-status dashboard
+- SHA-256, archive-path and SQLite integrity checks before restoration
+- Automatic safety backup before current data is replaced
+- Rollback to the previous state if restoration fails
+- Exact backup-name confirmation before a dashboard restoration
+- Controlled Gunicorn reload after a successful dashboard restoration
 - Large media storage excluded by design
 - Runtime data is stored outside the Git repository
+
+Backups can also be inspected and restored from Termux:
+
+```bash
+python -m app.backup list
+python -m app.backup verify BACKUP_NAME.tar.gz
+python -m app.backup restore BACKUP_NAME.tar.gz
+```
+
+The restore command asks for an exact confirmation and creates a new safety
+backup first. The `--yes` option is intended only for an already controlled,
+non-interactive recovery procedure.
 
 ### Live monitor
 
@@ -187,6 +205,7 @@ app/
 ├── database.py         SQLite schema and data-access functions
 ├── manage_users.py     User administration CLI
 ├── backup.py           Rotating backup utility
+├── backup_admin.py     Administrator backup and restore API
 ├── media.py            Media library backend
 ├── downloads.py        aria2 and Transmission integration
 ├── ai.py               Local AI API and conversation history
@@ -340,6 +359,7 @@ This includes:
 - User files are isolated by account
 - Administrative endpoints require the administrator role
 - File paths are validated before filesystem operations
+- Backup contents and checksums are validated before restoration
 - The application is intended for a trusted private network
 
 Before exposing the service to the public internet, HTTPS, a properly

@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/status.css') }}?v=1"
+        href="{{ url_for('static', filename='css/status.css') }}?v=2"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/status.js') }}?v=1"
+        src="{{ url_for('static', filename='js/status.js') }}?v=2"
     ></script>
 </head>
 
@@ -75,6 +75,42 @@
             </article>
         </section>
 
+        <section class="backup-restore-panel">
+            <div class="backup-restore-heading">
+                <div>
+                    <p class="status-section-label">Recuperare</p>
+                    <h2>Backupuri și restaurare</h2>
+                    <p>
+                        Verifică integritatea unei arhive sau restaurează
+                        baza de date, seifurile și cheia mesajelor.
+                    </p>
+                </div>
+                <button id="refresh-backups-button" type="button">
+                    Reîncarcă lista
+                </button>
+            </div>
+
+            <div class="restore-warning">
+                <strong>Restaurarea înlocuiește datele curente.</strong>
+                <span>
+                    Înainte de operație se creează automat un backup de
+                    siguranță. Confirmarea exactă a numelui este obligatorie.
+                </span>
+            </div>
+
+            <p id="backup-action-status" role="status" hidden></p>
+
+            <div
+                id="backup-list"
+                class="backup-list"
+                aria-live="polite"
+            ></div>
+
+            <p id="backup-list-empty" class="backup-list-empty" hidden>
+                Nu există încă backupuri locale.
+            </p>
+        </section>
+
         <section class="status-legend">
             <h2>Cum se interpretează</h2>
             <div>
@@ -84,8 +120,9 @@
                 <span><i class="legend-dot is-offline"></i>Indisponibil</span>
             </div>
             <p>
-                Panoul este doar pentru diagnosticare: nu pornește și nu
-                oprește automat niciun serviciu.
+                Verificarea stării nu pornește și nu oprește automat
+                serviciile. Restaurarea rulează numai după confirmarea
+                explicită a administratorului.
             </p>
         </section>
     </main>
