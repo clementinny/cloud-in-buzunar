@@ -22,6 +22,19 @@ ANDROID_CPU_PROCESS_PATTERN = re.compile(
     r"^\s*([0-9]+(?:\.[0-9]+)?)%\s+(\d+)/(.+?):\s+"
     r"[0-9]+(?:\.[0-9]+)?%\s+(?:user|usr)\b"
 )
+ROOT_GPU_COMMAND = (
+    "value=$(cat /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null); "
+    "[ -n \"$value\" ] && printf 'busy=%s\\n' \"$value\"; "
+    "value=$(cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null); "
+    "[ -n \"$value\" ] && printf 'current=%s\\n' \"$value\"; "
+    "value=$(cat /sys/class/kgsl/kgsl-3d0/devfreq/cur_freq 2>/dev/null); "
+    "[ -n \"$value\" ] && printf 'current_devfreq=%s\\n' \"$value\"; "
+    "value=$(cat /sys/class/kgsl/kgsl-3d0/max_gpuclk 2>/dev/null); "
+    "[ -n \"$value\" ] && printf 'maximum=%s\\n' \"$value\"; "
+    "value=$(cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null); "
+    "[ -n \"$value\" ] && printf 'maximum_devfreq=%s\\n' \"$value\"; "
+    "exit 0"
+)
 
 try:
     CLOCK_TICKS = int(os.sysconf("SC_CLK_TCK"))
@@ -344,6 +357,45 @@ def calculate_percent(value, total):
     return value / total * 100 if total > 0 else 0.0
 
 
+def parse_root_gpu_output(text):
+    values = {}
+
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+
+        name, raw_value = line.split("=", 1)
+        values[name.strip()] = raw_value.strip()
+
+    return values
+
+
+def read_root_gpu_values():
+    if not is_termux_environment():
+        return {}
+
+    su_command = shutil.which("su")
+
+    if not su_command:
+        return {}
+
+    try:
+        result = subprocess.run(
+            [su_command, "-c", ROOT_GPU_COMMAND],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=ROOT_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+
+    if result.returncode != 0:
+        return {}
+
+    return parse_root_gpu_output(result.stdout)
+
+
 def read_gpu_status():
     gpu_busy_path = Path("/sys/class/kgsl/kgsl-3d0/gpubusy")
     current_frequency_paths = [
@@ -359,6 +411,7 @@ def read_gpu_status():
         "usage_percent": None,
         "current_frequency_hz": None,
         "maximum_frequency_hz": None,
+        "source": None,
         "note": (
             "Android nu expune statisticile GPU acestui proces Termux."
         ),
@@ -371,8 +424,12 @@ def read_gpu_status():
                 encoding="utf-8"
             ).split()[:2]
         ]
-        result["usage_percent"] = calculate_percent(busy, total)
+        result["usage_percent"] = min(
+            100.0,
+            max(0.0, calculate_percent(busy, total)),
+        )
         result["available"] = True
+        result["source"] = "android"
         result["note"] = "Utilizare GPU raportată de driverul Android."
     except (OSError, ValueError, IndexError):
         pass
@@ -383,6 +440,7 @@ def read_gpu_status():
                 path.read_text(encoding="utf-8").strip()
             )
             result["available"] = True
+            result["source"] = "android"
             break
         except (OSError, ValueError):
             continue
@@ -393,9 +451,57 @@ def read_gpu_status():
                 path.read_text(encoding="utf-8").strip()
             )
             result["available"] = True
+            result["source"] = "android"
             break
         except (OSError, ValueError):
             continue
+
+    if (
+        result["usage_percent"] is None
+        or result["current_frequency_hz"] is None
+        or result["maximum_frequency_hz"] is None
+    ):
+        root_values = read_root_gpu_values()
+        root_used = False
+
+        if result["usage_percent"] is None and "busy" in root_values:
+            try:
+                busy, total = [
+                    int(value) for value in root_values["busy"].split()[:2]
+                ]
+                result["usage_percent"] = min(
+                    100.0,
+                    max(0.0, calculate_percent(busy, total)),
+                )
+                root_used = True
+            except (ValueError, IndexError):
+                pass
+
+        if result["current_frequency_hz"] is None:
+            for name in ("current", "current_devfreq"):
+                try:
+                    result["current_frequency_hz"] = int(root_values[name])
+                    root_used = True
+                    break
+                except (KeyError, ValueError):
+                    continue
+
+        if result["maximum_frequency_hz"] is None:
+            for name in ("maximum", "maximum_devfreq"):
+                try:
+                    result["maximum_frequency_hz"] = int(root_values[name])
+                    root_used = True
+                    break
+                except (KeyError, ValueError):
+                    continue
+
+        if root_used:
+            result["available"] = True
+            result["source"] = "root"
+            result["note"] = (
+                "Utilizare și frecvență GPU citite din driverul Adreno "
+                "cu permisiune root."
+            )
 
     return result
 

@@ -7,6 +7,31 @@ from app import resource_monitor
 
 
 class ResourceMonitorTest(unittest.TestCase):
+    def test_root_gpu_values_fill_restricted_adreno_metrics(self):
+        with (
+            patch.object(
+                resource_monitor.Path,
+                "read_text",
+                side_effect=PermissionError,
+            ),
+            patch.object(
+                resource_monitor,
+                "read_root_gpu_values",
+                return_value={
+                    "busy": "25 100",
+                    "current": "430000000",
+                    "maximum": "845000000",
+                },
+            ),
+        ):
+            result = resource_monitor.read_gpu_status()
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["source"], "root")
+        self.assertEqual(result["usage_percent"], 25.0)
+        self.assertEqual(result["current_frequency_hz"], 430000000)
+        self.assertEqual(result["maximum_frequency_hz"], 845000000)
+
     def test_android_cpuinfo_processes_are_parsed_and_sorted(self):
         output = """
           3.2% 111/system_server: 2.0% user + 1.2% kernel

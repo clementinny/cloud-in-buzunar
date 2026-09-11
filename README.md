@@ -24,7 +24,7 @@ responsive web dashboard.
 - Automatic rotating backups
 - Administrator-only system status dashboard
 - Live CPU, RAM, storage, network, GPU and process monitor
-- Optional root-aware CPU view with Android-wide process usage
+- Optional root-aware CPU/GPU view with Android-wide process usage
 - Safe dashboard controls for AI, aria2 and Transmission
 - Termux:Boot autostart, watchdog and daily backup supervision
 - Responsive interface built without a frontend framework

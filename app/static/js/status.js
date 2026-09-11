@@ -241,6 +241,23 @@ function formatFrequency(hertz) {
         : `${(value / 1_000_000).toFixed(0)} MHz`;
 }
 
+function formatGpuDetail(gpu) {
+    const current = formatFrequency(gpu.current_frequency_hz);
+    const maximum = formatFrequency(gpu.maximum_frequency_hz);
+    const hasCurrent = current !== "Frecvență indisponibilă";
+    const hasMaximum = maximum !== "Frecvență indisponibilă";
+
+    if (hasCurrent && hasMaximum) {
+        return `${current} / max ${maximum}${gpu.source === "root" ? " · root" : ""}`;
+    }
+
+    if (hasCurrent) {
+        return `${current}${gpu.source === "root" ? " · root" : ""}`;
+    }
+
+    return gpu.note || "Frecvență indisponibilă";
+}
+
 function createResourceCard(label, value, detail, state = "normal") {
     const card = document.createElement("article");
     card.className = `resource-card is-${state}`;
@@ -331,7 +348,7 @@ function renderResourceSummary(payload) {
                 ? `${gpuPercent.toFixed(1)}%`
                 : "Utilizare indisponibilă",
             gpu.available
-                ? formatFrequency(gpu.current_frequency_hz)
+                ? formatGpuDetail(gpu)
                 : (gpu.note || "Restricționat de Android"),
             gpuHasUsage ? usageState(gpuPercent) : "unknown",
         ),
