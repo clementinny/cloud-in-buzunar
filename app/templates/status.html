@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+    <meta name="theme-color" content="#0f172a">
+
+    <title>Starea serviciilor · CloudInBuzunar</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=status-1"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/status.css') }}?v=1"
+    >
+
+    <script
+        defer
+        src="{{ url_for('static', filename='js/status.js') }}?v=1"
+    ></script>
+</head>
+
+<body class="status-page">
+    <header class="status-header">
+        <a class="status-back-link" href="/">
+            ← Dashboard
+        </a>
+
+        <p class="status-label">CloudInBuzunar · Sistem</p>
+        <h1>Starea serviciilor</h1>
+        <p>
+            Sănătatea serverului și a integrărilor locale,
+            actualizată automat.
+        </p>
+    </header>
+
+    <main class="status-main">
+        <section class="status-overview" aria-live="polite">
+            <div class="status-overview-copy">
+                <span id="overall-indicator" class="status-indicator"></span>
+                <div>
+                    <h2 id="overall-title">Se verifică sistemul...</h2>
+                    <p id="overall-summary">
+                        Prima verificare poate dura câteva secunde.
+                    </p>
+                </div>
+            </div>
+
+            <div class="status-overview-actions">
+                <p id="last-updated">—</p>
+                <button id="refresh-status-button" type="button">
+                    Reîncarcă
+                </button>
+            </div>
+        </section>
+
+        <p id="status-error" class="status-error" role="alert" hidden></p>
+
+        <section
+            id="service-grid"
+            class="service-grid"
+            aria-label="Serviciile serverului"
+        >
+            <article class="service-card is-loading">
+                <div class="service-card-heading">
+                    <h2>Se încarcă...</h2>
+                    <span class="service-badge">Verificare</span>
+                </div>
+                <p>Așteaptă rezultatele serverului.</p>
+            </article>
+        </section>
+
+        <section class="status-legend">
+            <h2>Cum se interpretează</h2>
+            <div>
+                <span><i class="legend-dot is-healthy"></i>Funcționează</span>
+                <span><i class="legend-dot is-warning"></i>Necesită atenție</span>
+                <span><i class="legend-dot is-idle"></i>Oprit intenționat</span>
+                <span><i class="legend-dot is-offline"></i>Indisponibil</span>
+            </div>
+            <p>
+                Panoul este doar pentru diagnosticare: nu pornește și nu
+                oprește automat niciun serviciu.
+            </p>
+        </section>
+    </main>
+</body>
+</html>

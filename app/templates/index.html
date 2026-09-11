@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=17"
+    href="{{ url_for('static', filename='css/app.css') }}?v=18"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=17"
+    src="{{ url_for('static', filename='js/app.js') }}?v=18"
     defer
 ></script>
 </head>
@@ -70,6 +70,17 @@
                 </p>
                 <a href="{{ url_for('monitor.monitor_page') }}">
                     Deschide Monitor
+                </a>
+            </article>
+
+            <article id="system-status-service" hidden>
+                <h3>Starea serviciilor</h3>
+                <p>
+                    Verifică serverul, stocarea, backupurile și
+                    serviciile locale dintr-un singur panou.
+                </p>
+                <a href="{{ url_for('system_status.system_status_page') }}">
+                    Deschide starea sistemului
                 </a>
             </article>
         </section>

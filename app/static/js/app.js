@@ -72,6 +72,9 @@ const uploadPercent =
     document.querySelector("#upload-percent");
 const uploadMessage =
     document.querySelector("#upload-message");
+const systemStatusService = document.querySelector(
+    "#system-status-service",
+);
 let currentUser = null;
 
 let currentPath = "";
@@ -773,6 +776,7 @@ actions.append(deleteButton);
 
 function showDisconnectedState() {
     currentUser = null;
+    systemStatusService.hidden = true;
     currentPath = "";
     currentParentPath = null;
 
@@ -811,6 +815,8 @@ function showDisconnectedState() {
 function showConnectedState(fileCount) {
     const label =
         fileCount === 1 ? "element" : "elemente";
+
+    systemStatusService.hidden = currentUser.role !== "admin";
 
     vaultModeSwitch.hidden =
         currentUser.role !== "admin";

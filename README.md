@@ -20,6 +20,7 @@ local AI and administrative tools in one responsive web dashboard.
 - Persistent, per-user AI conversation history
 - Opt-in camera and microphone streaming through WebRTC
 - Automatic rotating backups
+- Administrator-only system status dashboard
 - Responsive interface built without a frontend framework
 
 ## Features
@@ -168,6 +169,7 @@ app/
 ├── ai.py               Local AI API and conversation history
 ├── ai_runtime.py       AI model process manager
 ├── monitor.py          Local WebRTC signaling API
+├── system_status.py    Read-only service health checks
 ├── static/             JavaScript and CSS
 └── templates/          HTML templates
 ```
