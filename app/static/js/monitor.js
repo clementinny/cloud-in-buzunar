@@ -127,6 +127,73 @@ function recordingModeLabel(mode) {
 }
 
 
+function formatRecordingOffset(seconds) {
+    const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainingSeconds = safeSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:`
+        + String(remainingSeconds).padStart(2, "0");
+}
+
+
+function createSpeechActivity(entry, player) {
+    const activity = document.createElement("div");
+    activity.className = "monitor-speech-activity";
+
+    if (["pending", "processing"].includes(entry.speech_status)) {
+        activity.textContent = "Se verifică dacă se aude vorbire...";
+        return activity;
+    }
+
+    if (entry.speech_status === "unavailable") {
+        activity.textContent =
+            "Analiza vorbirii necesită FFmpeg pe server.";
+        return activity;
+    }
+
+    if (entry.speech_status === "failed") {
+        activity.textContent =
+            "Înregistrarea nu a putut fi analizată.";
+        return activity;
+    }
+
+    const events = Array.isArray(entry.speech_events)
+        ? entry.speech_events.filter(Number.isFinite)
+        : [];
+
+    if (events.length === 0) {
+        activity.classList.add("is-quiet");
+        activity.textContent = "Nu s-a detectat vorbire.";
+        return activity;
+    }
+
+    const label = document.createElement("strong");
+    label.textContent = "Vorbire probabilă: ";
+    activity.append(label);
+
+    for (const timestamp of events.slice(0, 12)) {
+        const jumpButton = document.createElement("button");
+        jumpButton.type = "button";
+        jumpButton.className = "monitor-speech-time";
+        jumpButton.textContent = formatRecordingOffset(timestamp);
+        jumpButton.title = "Redă de la acest moment";
+        jumpButton.addEventListener("click", () => {
+            player.currentTime = timestamp;
+            player.play().catch(() => {});
+        });
+        activity.append(jumpButton);
+    }
+
+    if (events.length > 12) {
+        const remaining = document.createElement("span");
+        remaining.textContent = `+${events.length - 12}`;
+        activity.append(remaining);
+    }
+
+    return activity;
+}
+
+
 function renderRecordingControls(data) {
     const settings = data.recording ?? {
         desired_mode: "off",
@@ -216,6 +283,7 @@ function renderRecordings(entries) {
         player.controls = true;
         player.preload = "none";
         player.src = entry.play_url;
+        information.append(createSpeechActivity(entry, player));
 
         const deleteButton = document.createElement("button");
         deleteButton.type = "button";

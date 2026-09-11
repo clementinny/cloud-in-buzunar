@@ -209,6 +209,34 @@
     min-width: 230px;
 }
 
+.monitor-speech-activity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    color: #67e8f9;
+    font-size: 0.86rem;
+}
+
+.monitor-speech-activity.is-quiet {
+    color: var(--muted);
+}
+
+.monitor-speech-time {
+    min-height: 30px;
+    padding: 4px 8px;
+    color: #cffafe;
+    border-color: rgba(34, 211, 238, 0.42);
+    border-radius: 8px;
+    background: rgba(8, 145, 178, 0.16);
+    font-size: 0.8rem;
+}
+
+.monitor-speech-time:hover:not(:disabled) {
+    background: rgba(8, 145, 178, 0.3);
+}
+
 .monitor-recording-item audio,
 .monitor-recording-item video {
     width: min(480px, 100%);

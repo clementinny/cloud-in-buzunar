@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/monitor.css') }}?v=6"
+        href="{{ url_for('static', filename='css/monitor.css') }}?v=7"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/monitor.js') }}?v=6"
+        src="{{ url_for('static', filename='js/monitor.js') }}?v=7"
     ></script>
 </head>
 
@@ -182,7 +182,9 @@
             <p class="monitor-recording-note">
                 Segmente de 10 minute. Fără live sunt înregistrate pe
                 telefon; în timpul transmisiei, browserul arhivează
-                același flux video și audio pe care îl redă.
+                același flux video și audio pe care îl redă. După
+                salvare, serverul marchează momentele în care se aude
+                probabil vorbire.
             </p>
 
             <div class="monitor-recording-summary">

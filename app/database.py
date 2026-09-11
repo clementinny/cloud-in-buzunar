@@ -182,6 +182,17 @@ CREATE TABLE IF NOT EXISTS monitor_recordings (
     size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
     container TEXT NOT NULL DEFAULT 'mp4'
         CHECK (container IN ('mp4', 'webm')),
+    speech_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (
+            speech_status IN (
+                'pending',
+                'processing',
+                'complete',
+                'unavailable',
+                'failed'
+            )
+        ),
+    speech_events_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id)
         REFERENCES users(id)
@@ -272,6 +283,40 @@ def initialize_database():
                     CHECK (container IN ('mp4', 'webm'))
                 """
             )
+
+        if "speech_status" not in recording_columns:
+            connection.execute(
+                """
+                ALTER TABLE monitor_recordings
+                ADD COLUMN speech_status TEXT NOT NULL
+                    DEFAULT 'pending'
+                    CHECK (
+                        speech_status IN (
+                            'pending',
+                            'processing',
+                            'complete',
+                            'unavailable',
+                            'failed'
+                        )
+                    )
+                """
+            )
+
+        if "speech_events_json" not in recording_columns:
+            connection.execute(
+                """
+                ALTER TABLE monitor_recordings
+                ADD COLUMN speech_events_json TEXT NOT NULL DEFAULT '[]'
+                """
+            )
+
+        connection.execute(
+            """
+            UPDATE monitor_recordings
+            SET speech_status = 'pending'
+            WHERE speech_status = 'processing'
+            """
+        )
 
         connection.execute(MONITOR_RECORDING_INDEX)
         connection.commit()
@@ -1228,6 +1273,8 @@ def list_monitor_recordings(limit=300):
                 ended_at,
                 size_bytes,
                 container,
+                speech_status,
+                speech_events_json,
                 created_at
             FROM monitor_recordings
             ORDER BY ended_at DESC, id DESC
@@ -1255,12 +1302,60 @@ def find_monitor_recording(recording_id):
                 ended_at,
                 size_bytes,
                 container,
+                speech_status,
+                speech_events_json,
                 created_at
             FROM monitor_recordings
             WHERE id = ?
             """,
             (recording_id,),
         ).fetchone()
+    finally:
+        connection.close()
+
+
+def claim_monitor_recording_speech_analysis(recording_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE monitor_recordings
+            SET speech_status = 'processing'
+            WHERE id = ?
+              AND speech_status IN ('pending', 'unavailable')
+            """,
+            (recording_id,),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def set_monitor_recording_speech_analysis(
+    recording_id,
+    status,
+    speech_events_json,
+):
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE monitor_recordings
+            SET
+                speech_status = ?,
+                speech_events_json = ?
+            WHERE id = ?
+            """,
+            (
+                status,
+                speech_events_json,
+                recording_id,
+            ),
+        )
+        connection.commit()
     finally:
         connection.close()
 

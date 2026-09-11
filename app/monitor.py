@@ -1,7 +1,9 @@
 import json
 import hashlib
+import queue
 import re
 import secrets
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -19,6 +21,7 @@ from flask import (
 
 from app.database import (
     arm_monitor_source,
+    claim_monitor_recording_speech_analysis,
     clear_monitor_source,
     clear_monitor_session,
     create_monitor_session,
@@ -36,11 +39,16 @@ from app.database import (
     list_monitor_recordings,
     set_monitor_source_desired_state,
     set_monitor_recording_actual_mode,
+    set_monitor_recording_speech_analysis,
     set_monitor_recording_settings,
     set_monitor_answer,
     touch_monitor_session,
     touch_monitor_viewer_session,
     update_monitor_source,
+)
+from app.speech_activity import (
+    detect_speech_activity,
+    speech_analysis_available,
 )
 
 
@@ -56,6 +64,43 @@ DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 MONITOR_RECORDING_DIR = DATA_DIR / "monitor-recordings"
 MONITOR_RECORDING_DIR.mkdir(parents=True, exist_ok=True)
 MONITOR_RECORDING_DIR.chmod(0o700)
+SPEECH_ANALYSIS_QUEUE = queue.Queue()
+
+
+def run_speech_analysis_worker():
+    while True:
+        recording_id, file_name, duration = (
+            SPEECH_ANALYSIS_QUEUE.get()
+        )
+
+        try:
+            if not claim_monitor_recording_speech_analysis(recording_id):
+                continue
+
+            status, events = detect_speech_activity(
+                MONITOR_RECORDING_DIR / file_name,
+                duration,
+            )
+            set_monitor_recording_speech_analysis(
+                recording_id,
+                status,
+                json.dumps(events),
+            )
+        except Exception:
+            set_monitor_recording_speech_analysis(
+                recording_id,
+                "failed",
+                "[]",
+            )
+        finally:
+            SPEECH_ANALYSIS_QUEUE.task_done()
+
+
+threading.Thread(
+    target=run_speech_analysis_worker,
+    name="monitor-speech-analysis",
+    daemon=True,
+).start()
 
 
 def get_session_user():
@@ -191,11 +236,21 @@ def read_json_description(value):
 
 
 def serialize_recording(recording):
+    try:
+        speech_events = json.loads(recording["speech_events_json"])
+    except (TypeError, json.JSONDecodeError):
+        speech_events = []
+
+    if not isinstance(speech_events, list):
+        speech_events = []
+
     return {
         "id": recording["id"],
         "mode": recording["mode"],
         "camera_facing": recording["camera_facing"],
         "container": recording["container"],
+        "speech_status": recording["speech_status"],
+        "speech_events": speech_events,
         "started_at": recording["started_at"],
         "ended_at": recording["ended_at"],
         "size_bytes": recording["size_bytes"],
@@ -203,6 +258,36 @@ def serialize_recording(recording):
             f"/api/monitor/recordings/{recording['id']}"
         ),
     }
+
+
+def schedule_speech_analysis(recording):
+    status = recording["speech_status"]
+
+    if status not in {"pending", "unavailable"}:
+        return
+
+    if status == "unavailable" and not speech_analysis_available():
+        return
+
+    try:
+        started_at = datetime.fromisoformat(recording["started_at"])
+        ended_at = datetime.fromisoformat(recording["ended_at"])
+    except (TypeError, ValueError):
+        set_monitor_recording_speech_analysis(
+            recording["id"],
+            "failed",
+            "[]",
+        )
+        return
+
+    duration = max(0.0, (ended_at - started_at).total_seconds())
+    SPEECH_ANALYSIS_QUEUE.put(
+        (
+            recording["id"],
+            recording["file_name"],
+            duration,
+        )
+    )
 
 
 def prune_monitor_recordings(retention_hours=None):
@@ -661,6 +746,7 @@ def monitor_upload_recording():
         return jsonify({"error": "Recording could not be stored"}), 500
 
     recording = find_monitor_recording(recording_id)
+    schedule_speech_analysis(recording)
     response = serialize_recording(recording)
     prune_monitor_recordings()
     return jsonify(response), 201
@@ -671,6 +757,10 @@ def monitor_upload_recording():
 def monitor_list_recordings():
     prune_monitor_recordings()
     recordings = list_monitor_recordings()
+
+    for recording in recordings:
+        schedule_speech_analysis(recording)
+
     total_size = sum(recording["size_bytes"] for recording in recordings)
     return jsonify(
         {

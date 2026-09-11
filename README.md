@@ -101,6 +101,8 @@ Available operations include:
 - Arming requires a local button press and Android permissions
 - Persistent Android notification shows the armed/live state
 - Administrators can stop the source remotely
+- Rolling audio or 480p video recordings with 24/48-hour retention
+- Local speech-activity markers link directly to likely conversation moments
 - Signaling data is kept locally in SQLite
 - No external streaming service or cloud relay is required on the LAN
 
@@ -240,6 +242,9 @@ The following integrations are optional and run only on localhost:
 
 Model files, RPC secrets, databases, uploaded files and logs are intentionally
 not included in the repository.
+
+Speech-activity markers use local FFmpeg audio analysis. On Termux, enable
+them with `pkg install ffmpeg`; recordings still work when FFmpeg is absent.
 
 ## Runtime data
 
