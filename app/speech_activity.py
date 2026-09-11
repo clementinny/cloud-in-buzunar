@@ -6,9 +6,10 @@ import subprocess
 SILENCE_PATTERN = re.compile(
     r"silence_(start|end):\s*(-?\d+(?:\.\d+)?)"
 )
-SILENCE_THRESHOLD = "-38dB"
-MINIMUM_SILENCE_SECONDS = 0.8
-MINIMUM_ACTIVITY_SECONDS = 0.8
+SILENCE_THRESHOLD = "-30dB"
+MINIMUM_SILENCE_SECONDS = 0.6
+MINIMUM_ACTIVITY_SECONDS = 1.0
+STARTUP_NOISE_GRACE_SECONDS = 1.5
 MAXIMUM_EVENTS = 300
 
 
@@ -35,6 +36,8 @@ def detect_speech_activity(recording_path, duration_seconds):
                 "-vn",
                 "-af",
                 (
+                    "highpass=f=120,"
+                    "lowpass=f=3800,"
                     "silencedetect="
                     f"noise={SILENCE_THRESHOLD}:"
                     f"d={MINIMUM_SILENCE_SECONDS}"
@@ -81,7 +84,16 @@ def detect_speech_activity(recording_path, duration_seconds):
     activity_cursor = 0.0
 
     for silence_start, silence_end in silence_intervals:
-        if silence_start - activity_cursor >= MINIMUM_ACTIVITY_SECONDS:
+        activity_duration = silence_start - activity_cursor
+        is_startup_noise = (
+            activity_cursor == 0
+            and silence_start <= STARTUP_NOISE_GRACE_SECONDS
+        )
+
+        if (
+            activity_duration >= MINIMUM_ACTIVITY_SECONDS
+            and not is_startup_noise
+        ):
             activity_starts.append(round(activity_cursor))
 
         activity_cursor = max(activity_cursor, silence_end)

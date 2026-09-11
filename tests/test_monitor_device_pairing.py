@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 
 class MonitorDevicePairingTest(unittest.TestCase):
@@ -210,6 +211,25 @@ class MonitorDevicePairingTest(unittest.TestCase):
         )
         self.assertEqual(playback_response.data, b"test-aac-segment")
         playback_response.close()
+
+        with (
+            patch(
+                "app.monitor.speech_analysis_available",
+                return_value=True,
+            ),
+            patch("app.monitor.schedule_speech_analysis") as schedule,
+        ):
+            reanalyze_response = admin_client.post(
+                f"/api/monitor/recordings/{recording_id}"
+                "/speech/reanalyze"
+            )
+
+        self.assertEqual(reanalyze_response.status_code, 202)
+        self.assertEqual(
+            reanalyze_response.get_json()["speech_status"],
+            "pending",
+        )
+        schedule.assert_called_once()
 
         rejected_response = device_client.post(
             "/api/monitor/source/poll",

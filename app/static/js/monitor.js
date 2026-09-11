@@ -136,6 +136,37 @@ function formatRecordingOffset(seconds) {
 }
 
 
+function appendReanalyzeButton(activity, entry) {
+    if (["pending", "processing"].includes(entry.speech_status)) {
+        return;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "monitor-speech-reanalyze";
+    button.textContent = "Reanalizează";
+    button.title = "Repetă detectarea cu setările actuale";
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "Se pornește...";
+
+        try {
+            const response = await fetch(
+                `/api/monitor/recordings/${entry.id}/speech/reanalyze`,
+                {method: "POST"},
+            );
+            await readJsonResponse(response);
+            await loadRecordings();
+        } catch (error) {
+            showError(error.message);
+            button.disabled = false;
+            button.textContent = "Reanalizează";
+        }
+    });
+    activity.append(button);
+}
+
+
 function createSpeechActivity(entry, player) {
     const activity = document.createElement("div");
     activity.className = "monitor-speech-activity";
@@ -148,12 +179,14 @@ function createSpeechActivity(entry, player) {
     if (entry.speech_status === "unavailable") {
         activity.textContent =
             "Analiza vorbirii necesită FFmpeg pe server.";
+        appendReanalyzeButton(activity, entry);
         return activity;
     }
 
     if (entry.speech_status === "failed") {
         activity.textContent =
             "Înregistrarea nu a putut fi analizată.";
+        appendReanalyzeButton(activity, entry);
         return activity;
     }
 
@@ -164,6 +197,7 @@ function createSpeechActivity(entry, player) {
     if (events.length === 0) {
         activity.classList.add("is-quiet");
         activity.textContent = "Nu s-a detectat vorbire.";
+        appendReanalyzeButton(activity, entry);
         return activity;
     }
 
@@ -189,6 +223,8 @@ function createSpeechActivity(entry, player) {
         remaining.textContent = `+${events.length - 12}`;
         activity.append(remaining);
     }
+
+    appendReanalyzeButton(activity, entry);
 
     return activity;
 }

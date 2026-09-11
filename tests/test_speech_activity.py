@@ -32,6 +32,30 @@ class SpeechActivityTest(unittest.TestCase):
             ("complete", [5, 12]),
         )
 
+        audio_filter = run.call_args.args[0][
+            run.call_args.args[0].index("-af") + 1
+        ]
+        self.assertIn("highpass=f=120", audio_filter)
+        self.assertIn("lowpass=f=3800", audio_filter)
+        self.assertIn("noise=-30dB", audio_filter)
+
+    @patch("app.speech_activity.subprocess.run")
+    @patch("app.speech_activity.shutil.which", return_value="ffmpeg")
+    def test_ignores_short_startup_noise(self, _which, run):
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stderr=(
+                "silence_start: 1.1\n"
+                "silence_end: 3.8 | silence_duration: 2.7\n"
+                "silence_start: 6.2\n"
+            ),
+        )
+
+        self.assertEqual(
+            detect_speech_activity("segment.m4a", 8),
+            ("complete", [4]),
+        )
+
     @patch("app.speech_activity.subprocess.run")
     @patch("app.speech_activity.shutil.which", return_value="ffmpeg")
     def test_reports_no_activity_for_a_silent_segment(self, _which, run):

@@ -37,6 +37,7 @@ from app.database import (
     get_active_monitor_session,
     get_monitor_recording_settings,
     list_monitor_recordings,
+    reset_monitor_recording_speech_analysis,
     set_monitor_source_desired_state,
     set_monitor_recording_actual_mode,
     set_monitor_recording_speech_analysis,
@@ -793,6 +794,38 @@ def monitor_play_recording(recording_id):
         mimetype=mimetype,
         conditional=True,
     )
+
+
+@monitor_blueprint.post(
+    "/api/monitor/recordings/<int:recording_id>/speech/reanalyze"
+)
+@require_monitor_admin
+def monitor_reanalyze_recording(recording_id):
+    if not speech_analysis_available():
+        return jsonify(
+            {"error": "FFmpeg is not available on the server"}
+        ), 503
+
+    recording = find_monitor_recording(recording_id)
+
+    if recording is None:
+        return jsonify({"error": "Recording not found"}), 404
+
+    recording_path = MONITOR_RECORDING_DIR / recording["file_name"]
+
+    if not recording_path.is_file():
+        return jsonify({"error": "Recording file not found"}), 404
+
+    reset_monitor_recording_speech_analysis(recording_id)
+    recording = find_monitor_recording(recording_id)
+    schedule_speech_analysis(recording)
+
+    return jsonify(
+        {
+            "recording_id": recording_id,
+            "speech_status": "pending",
+        }
+    ), 202
 
 
 @monitor_blueprint.delete("/api/monitor/recordings/<int:recording_id>")

@@ -1360,6 +1360,26 @@ def set_monitor_recording_speech_analysis(
         connection.close()
 
 
+def reset_monitor_recording_speech_analysis(recording_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE monitor_recordings
+            SET
+                speech_status = 'pending',
+                speech_events_json = '[]'
+            WHERE id = ?
+            """,
+            (recording_id,),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
 def delete_monitor_recording(recording_id):
     connection = open_database()
 

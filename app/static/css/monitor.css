@@ -237,6 +237,16 @@
     background: rgba(8, 145, 178, 0.3);
 }
 
+.monitor-speech-reanalyze {
+    min-height: 30px;
+    padding: 4px 9px;
+    color: var(--muted);
+    border-color: var(--border);
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.45);
+    font-size: 0.78rem;
+}
+
 .monitor-recording-item audio,
 .monitor-recording-item video {
     width: min(480px, 100%);
