@@ -106,6 +106,7 @@ class SystemStatusRoutesTest(unittest.TestCase):
                 "transmission",
                 "ai",
                 "monitor",
+                "supervisor",
             },
         )
         self.assertIn(

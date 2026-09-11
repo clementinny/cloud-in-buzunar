@@ -40,6 +40,9 @@ system_status_blueprint = Blueprint("system_status", __name__)
 
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 BACKUP_DIR = DATA_DIR / "backups"
+AUTOSTART_CONFIG_FILE = DATA_DIR / "autostart.conf"
+WATCHDOG_PID_FILE = DATA_DIR / "runtime" / "cloud-watchdog.pid"
+SERVICE_LOG_FILE = DATA_DIR / "logs" / "cloud-services.log"
 SERVER_STARTED_AT = time.monotonic()
 
 
@@ -627,6 +630,70 @@ def collect_monitor_service():
     )
 
 
+def read_watchdog_pid():
+    try:
+        process_id = int(
+            WATCHDOG_PID_FILE.read_text(encoding="utf-8").strip()
+        )
+        command = Path(f"/proc/{process_id}/cmdline").read_bytes()
+    except (OSError, ValueError):
+        return None
+
+    if b"cloud-services.sh\0watchdog" not in command:
+        return None
+
+    return process_id
+
+
+def read_last_service_event():
+    try:
+        lines = SERVICE_LOG_FILE.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ).splitlines()
+    except OSError:
+        return None
+
+    return lines[-1][-180:] if lines else None
+
+
+def collect_supervisor_service():
+    if not AUTOSTART_CONFIG_FILE.is_file():
+        return service_result(
+            "supervisor",
+            "Autostart și watchdog",
+            "idle",
+            "Pornirea automată nu este configurată încă.",
+        )
+
+    process_id = read_watchdog_pid()
+    last_event = read_last_service_event()
+
+    if process_id is None:
+        return service_result(
+            "supervisor",
+            "Autostart și watchdog",
+            "offline",
+            "Watchdog-ul nu rulează.",
+            [metric("Ultimul eveniment", last_event or "Indisponibil")],
+            impact="warning",
+        )
+
+    metrics = [metric("PID", process_id)]
+
+    if last_event:
+        metrics.append(metric("Ultimul eveniment", last_event))
+
+    return service_result(
+        "supervisor",
+        "Autostart și watchdog",
+        "healthy",
+        "Serviciile sunt supravegheate automat.",
+        metrics,
+        impact="warning",
+    )
+
+
 STATUS_COLLECTORS = [
     collect_web_service,
     collect_database_service,
@@ -638,6 +705,7 @@ STATUS_COLLECTORS = [
     collect_transmission_service,
     collect_ai_service,
     collect_monitor_service,
+    collect_supervisor_service,
 ]
 STATUS_ORDER = [
     "web",
@@ -650,6 +718,7 @@ STATUS_ORDER = [
     "transmission",
     "ai",
     "monitor",
+    "supervisor",
 ]
 
 

@@ -21,6 +21,7 @@ local AI and administrative tools in one responsive web dashboard.
 - Opt-in camera and microphone streaming through WebRTC
 - Automatic rotating backups
 - Administrator-only system status dashboard
+- Termux:Boot autostart, watchdog and daily backup supervision
 - Responsive interface built without a frontend framework
 
 ## Features
@@ -172,6 +173,9 @@ app/
 ├── system_status.py    Read-only service health checks
 ├── static/             JavaScript and CSS
 └── templates/          HTML templates
+scripts/
+├── cloud-services.sh           Service manager and watchdog
+└── install-termux-autostart.sh Termux:Boot installer
 ```
 
 The native companion lives separately:
@@ -248,6 +252,43 @@ not included in the repository.
 Speech-activity markers use local FFmpeg audio analysis. On Termux, enable
 them with `pkg install ffmpeg`; recordings still work when FFmpeg is absent.
 
+## Automatic startup and recovery
+
+Install the
+[Termux:Boot](https://github.com/termux/termux-boot) add-on from the same
+source as the main Termux application and open it once. Then run:
+
+```bash
+cd "$HOME/projects/cloud-in-buzunar"
+chmod +x scripts/*.sh
+scripts/install-termux-autostart.sh --without-ai
+```
+
+The generated boot script acquires a Termux wake lock and starts SSH,
+Gunicorn, aria2 and Transmission. A lightweight watchdog checks them every
+60 seconds, restarts an unavailable configured service after three failed
+checks, and creates a daily backup while retaining the newest three copies.
+
+AI is intentionally disabled at boot to reduce heat and battery use. Enable
+it later with:
+
+```bash
+scripts/install-termux-autostart.sh --with-ai
+```
+
+Inspect the current state and logs with:
+
+```bash
+scripts/cloud-services.sh status
+tail -n 50 "$HOME/cloud-in-buzunar-data/logs/cloud-services.log"
+tail -n 50 "$HOME/cloud-in-buzunar-data/logs/cloud-watchdog.log"
+```
+
+Settings are stored in `~/cloud-in-buzunar-data/autostart.conf`. Disable
+battery optimization for both Termux and Termux:Boot. Android may still
+require the Monitor companion to be opened and armed after a reboot; the
+autostart scripts never activate the camera or microphone.
+
 ## Runtime data
 
 Private runtime data is stored separately:
@@ -282,7 +323,6 @@ configured reverse proxy and additional security review are required.
 
 ## Roadmap
 
-- Unified service-status dashboard
 - HTTPS and reverse-proxy support
 - Expiring public file-sharing links
 - Automated tests and continuous integration
