@@ -7,6 +7,33 @@ const usernameInput =
 const passwordInput =
     document.querySelector("#password-input");
 const loginError = document.querySelector("#login-error");
+const openRegistrationButton = document.querySelector(
+    "#open-registration",
+);
+const registrationDialog = document.querySelector(
+    "#registration-dialog",
+);
+const registrationForm = document.querySelector(
+    "#registration-form",
+);
+const registrationUsernameInput = document.querySelector(
+    "#registration-username-input",
+);
+const registrationPasswordInput = document.querySelector(
+    "#registration-password-input",
+);
+const registrationPasswordConfirmation = document.querySelector(
+    "#registration-password-confirmation",
+);
+const registrationMessage = document.querySelector(
+    "#registration-message",
+);
+const closeRegistrationButton = document.querySelector(
+    "#close-registration",
+);
+const submitRegistrationButton = document.querySelector(
+    "#submit-registration",
+);
 const connectionStatus = document.querySelector("#connection-status");
 const filesMessage = document.querySelector("#files-message");
 const fileList = document.querySelector("#file-list");
@@ -74,6 +101,27 @@ const uploadMessage =
     document.querySelector("#upload-message");
 const systemStatusService = document.querySelector(
     "#system-status-service",
+);
+const accountApprovalsService = document.querySelector(
+    "#account-approvals-service",
+);
+const accountApprovalsSummary = document.querySelector(
+    "#account-approvals-summary",
+);
+const registrationRequestsSection = document.querySelector(
+    "#registration-requests",
+);
+const registrationRequestsCount = document.querySelector(
+    "#registration-requests-count",
+);
+const registrationRequestsMessage = document.querySelector(
+    "#registration-requests-message",
+);
+const registrationRequestsList = document.querySelector(
+    "#registration-requests-list",
+);
+const refreshRegistrationRequestsButton = document.querySelector(
+    "#refresh-registration-requests",
 );
 let currentUser = null;
 
@@ -356,6 +404,191 @@ async function loginUser(username, password) {
     const data = await response.json();
 
     return data.user;
+}
+
+
+async function registerUser(username, password) {
+    const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            username,
+            password,
+        }),
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(
+            data?.error ??
+            `Cererea nu a putut fi trimisă: HTTP ${response.status}`,
+        );
+    }
+
+    return data;
+}
+
+
+function formatRegistrationDate(value) {
+    const parsedDate = new Date(value);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+        return "dată necunoscută";
+    }
+
+    return parsedDate.toLocaleString("ro-RO", {
+        dateStyle: "short",
+        timeStyle: "short",
+    });
+}
+
+
+async function runRegistrationAction(
+    registration,
+    action,
+) {
+    const encodedId = encodeURIComponent(
+        String(registration.id),
+    );
+    const isApproval = action === "approve";
+    const endpoint = isApproval
+        ? `/api/admin/registrations/${encodedId}/approve`
+        : `/api/admin/registrations/${encodedId}`;
+    const response = await fetch(endpoint, {
+        method: isApproval ? "POST" : "DELETE",
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(
+            data?.error ??
+            `Acțiunea a eșuat: HTTP ${response.status}`,
+        );
+    }
+
+    await loadRegistrationRequests();
+
+    if (isApproval && vaultMode === "admin") {
+        await loadAdminVaults();
+        await loadFiles("");
+    }
+}
+
+
+function renderRegistrationRequests(registrations) {
+    registrationRequestsList.replaceChildren();
+    const requestLabel = registrations.length === 1
+        ? "cerere în așteptare"
+        : "cereri în așteptare";
+
+    registrationRequestsCount.textContent =
+        `${registrations.length} ${requestLabel}`;
+    accountApprovalsSummary.textContent = registrations.length === 0
+        ? "Nu există cereri noi."
+        : `${registrations.length} ${requestLabel}.`;
+
+    if (registrations.length === 0) {
+        registrationRequestsMessage.textContent =
+            "Nu există cereri noi.";
+        registrationRequestsMessage.hidden = false;
+        return;
+    }
+
+    registrationRequestsMessage.hidden = true;
+
+    for (const registration of registrations) {
+        const item = document.createElement("li");
+        const information = document.createElement("div");
+        const username = document.createElement("strong");
+        const createdAt = document.createElement("span");
+        const actions = document.createElement("div");
+        const approveButton = document.createElement("button");
+        const rejectButton = document.createElement("button");
+
+        item.className = "registration-request-row";
+        information.className = "registration-request-information";
+        actions.className = "registration-request-actions";
+        username.textContent = registration.username;
+        createdAt.textContent =
+            `Solicitat: ${formatRegistrationDate(registration.created_at)}`;
+        approveButton.type = "button";
+        approveButton.textContent = "Aprobă";
+        rejectButton.type = "button";
+        rejectButton.className = "registration-reject-button";
+        rejectButton.textContent = "Respinge";
+
+        for (const [button, action] of [
+            [approveButton, "approve"],
+            [rejectButton, "reject"],
+        ]) {
+            button.addEventListener("click", async () => {
+                if (
+                    action === "reject"
+                    && !window.confirm(
+                        `Respingi cererea lui ${registration.username}?`,
+                    )
+                ) {
+                    return;
+                }
+
+                approveButton.disabled = true;
+                rejectButton.disabled = true;
+
+                try {
+                    await runRegistrationAction(
+                        registration,
+                        action,
+                    );
+                } catch (error) {
+                    registrationRequestsMessage.textContent =
+                        error.message;
+                    registrationRequestsMessage.classList.add(
+                        "is-error",
+                    );
+                    registrationRequestsMessage.hidden = false;
+                    approveButton.disabled = false;
+                    rejectButton.disabled = false;
+                }
+            });
+        }
+
+        information.append(username, createdAt);
+        actions.append(approveButton, rejectButton);
+        item.append(information, actions);
+        registrationRequestsList.append(item);
+    }
+}
+
+
+async function loadRegistrationRequests() {
+    if (currentUser?.role !== "admin") {
+        return;
+    }
+
+    registrationRequestsMessage.classList.remove("is-error");
+    refreshRegistrationRequestsButton.disabled = true;
+
+    try {
+        const response = await fetch("/api/admin/registrations");
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+            throw new Error(
+                data?.error ??
+                `Cererile nu pot fi încărcate: HTTP ${response.status}`,
+            );
+        }
+
+        renderRegistrationRequests(data.registrations);
+    } catch (error) {
+        registrationRequestsMessage.textContent = error.message;
+        registrationRequestsMessage.classList.add("is-error");
+        registrationRequestsMessage.hidden = false;
+    } finally {
+        refreshRegistrationRequestsButton.disabled = false;
+    }
 }
 
 
@@ -777,6 +1010,9 @@ actions.append(deleteButton);
 function showDisconnectedState() {
     currentUser = null;
     systemStatusService.hidden = true;
+    accountApprovalsService.hidden = true;
+    registrationRequestsSection.hidden = true;
+    registrationRequestsList.replaceChildren();
     currentPath = "";
     currentParentPath = null;
 
@@ -817,6 +1053,8 @@ function showConnectedState(fileCount) {
         fileCount === 1 ? "element" : "elemente";
 
     systemStatusService.hidden = currentUser.role !== "admin";
+    accountApprovalsService.hidden = currentUser.role !== "admin";
+    registrationRequestsSection.hidden = currentUser.role !== "admin";
 
     vaultModeSwitch.hidden =
         currentUser.role !== "admin";
@@ -1028,6 +1266,69 @@ closeLoginButton.addEventListener("click", () => {
 });
 
 
+openRegistrationButton.addEventListener("click", () => {
+    loginDialog.close();
+    loginForm.reset();
+    loginError.hidden = true;
+    registrationForm.reset();
+    registrationMessage.hidden = true;
+    registrationMessage.classList.remove("is-success");
+    registrationDialog.showModal();
+    registrationUsernameInput.focus();
+});
+
+
+closeRegistrationButton.addEventListener("click", () => {
+    registrationDialog.close();
+    registrationForm.reset();
+    registrationMessage.hidden = true;
+    registrationMessage.classList.remove("is-success");
+    loginDialog.showModal();
+    usernameInput.focus();
+});
+
+
+registrationForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    registrationMessage.hidden = true;
+    registrationMessage.classList.remove("is-success");
+
+    if (
+        registrationPasswordInput.value
+        !== registrationPasswordConfirmation.value
+    ) {
+        registrationMessage.textContent = "Parolele nu coincid.";
+        registrationMessage.hidden = false;
+        return;
+    }
+
+    submitRegistrationButton.disabled = true;
+
+    try {
+        const data = await registerUser(
+            registrationUsernameInput.value.trim(),
+            registrationPasswordInput.value,
+        );
+
+        registrationForm.reset();
+        registrationMessage.textContent = data.message;
+        registrationMessage.classList.add("is-success");
+        registrationMessage.hidden = false;
+    } catch (error) {
+        registrationMessage.textContent = error.message;
+        registrationMessage.hidden = false;
+    } finally {
+        submitRegistrationButton.disabled = false;
+    }
+});
+
+
+refreshRegistrationRequestsButton.addEventListener(
+    "click",
+    loadRegistrationRequests,
+);
+
+
 loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
@@ -1039,6 +1340,10 @@ loginForm.addEventListener("submit", async (event) => {
     try {
         currentUser = await loginUser(username, password);
         await loadFiles();
+
+        if (currentUser.role === "admin") {
+            await loadRegistrationRequests();
+        }
 
         loginDialog.close();
         loginForm.reset();
@@ -1309,6 +1614,10 @@ async function initializeApplication() {
 
         currentUser = user;
         await loadFiles();
+
+        if (currentUser.role === "admin") {
+            await loadRegistrationRequests();
+        }
     } catch (error) {
         showDisconnectedState();
     }

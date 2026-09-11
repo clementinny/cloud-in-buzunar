@@ -19,11 +19,18 @@ from flask import (
 from werkzeug.security import check_password_hash
 
 from app.database import (
+    RegistrationConflictError,
+    approve_registration_request,
+    create_registration_request,
+    count_recent_registration_attempts,
     find_user_by_id,
     find_user_by_username,
     initialize_database,
     count_recent_failed_login_attempts,
     record_login_attempt,
+    record_registration_attempt,
+    reject_registration_request,
+    list_registration_requests,
     list_users,
 )
 
@@ -368,6 +375,60 @@ def login():
     return jsonify({"user": serialize_user(user)})
 
 
+@app.post("/api/auth/register")
+def register_account():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected JSON body"}), 400
+
+    username = payload.get("username")
+    password = payload.get("password")
+
+    if not isinstance(username, str) or not isinstance(password, str):
+        return jsonify(
+            {"error": "Utilizatorul și parola sunt obligatorii."}
+        ), 400
+
+    client_ip = request.remote_addr or "unknown"
+
+    if count_recent_registration_attempts(
+        client_ip,
+        window_minutes=10,
+    ) >= 5:
+        return jsonify(
+            {
+                "error": (
+                    "Prea multe cereri. Încearcă din nou "
+                    "peste 10 minute."
+                )
+            }
+        ), 429
+
+    record_registration_attempt(client_ip)
+
+    try:
+        request_id = create_registration_request(
+            username,
+            password,
+        )
+    except RegistrationConflictError as error:
+        return jsonify({"error": str(error)}), 409
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    return jsonify(
+        {
+            "id": request_id,
+            "status": "pending",
+            "message": (
+                "Cererea a fost trimisă. Te poți conecta "
+                "după aprobarea unui administrator."
+            ),
+        }
+    ), 201
+
+
 @app.post("/api/auth/logout")
 def logout():
     session.clear()
@@ -385,6 +446,62 @@ def current_session():
         return jsonify({"error": "Authentication required"}), 401
 
     return jsonify({"user": serialize_user(user)})
+
+
+def serialize_registration_request(registration):
+    return {
+        "id": registration["id"],
+        "username": registration["username"],
+        "created_at": registration["created_at"],
+    }
+
+
+@app.get("/api/admin/registrations")
+@require_admin
+def admin_list_registration_requests():
+    registrations = [
+        serialize_registration_request(registration)
+        for registration in list_registration_requests()
+    ]
+
+    return jsonify(
+        {
+            "count": len(registrations),
+            "registrations": registrations,
+        }
+    )
+
+
+@app.post("/api/admin/registrations/<int:request_id>/approve")
+@require_admin
+def admin_approve_registration(request_id):
+    try:
+        user = approve_registration_request(request_id)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 409
+
+    return jsonify(
+        {
+            "status": "approved",
+            "user": user,
+        }
+    ), 201
+
+
+@app.delete("/api/admin/registrations/<int:request_id>")
+@require_admin
+def admin_reject_registration(request_id):
+    try:
+        reject_registration_request(request_id)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 404
+
+    return jsonify(
+        {
+            "status": "rejected",
+            "id": request_id,
+        }
+    )
 
 def create_vault_folder(user):
     payload = request.get_json(silent=True)

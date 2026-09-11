@@ -8,6 +8,10 @@ from werkzeug.security import generate_password_hash
 DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 DATABASE_PATH = DATA_DIR / "cloud-in-buzunar.sqlite3"
 
+
+class RegistrationConflictError(ValueError):
+    pass
+
 USER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +60,29 @@ CREATE INDEX IF NOT EXISTS ai_messages_user_history
 ON ai_messages (
     user_id,
     id
+)
+"""
+
+REGISTRATION_REQUEST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS registration_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+REGISTRATION_ATTEMPT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS registration_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip_address TEXT NOT NULL,
+    attempted_at TEXT NOT NULL
+)
+"""
+REGISTRATION_ATTEMPT_INDEX = """
+CREATE INDEX IF NOT EXISTS registration_attempts_lookup
+ON registration_attempts (
+    ip_address,
+    attempted_at
 )
 """
 
@@ -225,6 +252,9 @@ def initialize_database():
         connection.execute(USER_SCHEMA)
         connection.execute(LOGIN_ATTEMPT_SCHEMA)
         connection.execute(LOGIN_ATTEMPT_INDEX)
+        connection.execute(REGISTRATION_REQUEST_SCHEMA)
+        connection.execute(REGISTRATION_ATTEMPT_SCHEMA)
+        connection.execute(REGISTRATION_ATTEMPT_INDEX)
         connection.execute(AI_MESSAGE_SCHEMA)
         connection.execute(AI_MESSAGE_INDEX)
         connection.execute(MONITOR_SESSION_SCHEMA)
@@ -694,6 +724,237 @@ def clear_ai_messages(user_id):
         connection.commit()
 
         return cursor.rowcount
+    finally:
+        connection.close()
+
+
+def validate_registration_username(username):
+    normalized_username = username.strip()
+
+    if not 3 <= len(normalized_username) <= 32:
+        raise ValueError(
+            "Numele trebuie să aibă între 3 și 32 de caractere."
+        )
+
+    allowed_characters = set(
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789_.-"
+    )
+
+    if any(
+        character not in allowed_characters
+        for character in normalized_username
+    ):
+        raise ValueError(
+            "Numele poate conține doar litere, cifre, punct, "
+            "cratimă și underscore."
+        )
+
+    return normalized_username
+
+
+def create_registration_request(username, password):
+    normalized_username = validate_registration_username(username)
+
+    if len(password) < 12:
+        raise ValueError(
+            "Parola trebuie să conțină cel puțin 12 caractere."
+        )
+
+    if len(password) > 128:
+        raise ValueError(
+            "Parola nu poate depăși 128 de caractere."
+        )
+
+    password_hash = generate_password_hash(password)
+    created_at = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        existing_user = connection.execute(
+            """
+            SELECT 1
+            FROM users
+            WHERE username = ? COLLATE NOCASE
+            """,
+            (normalized_username,),
+        ).fetchone()
+
+        if existing_user is not None:
+            raise RegistrationConflictError(
+                "Numele de utilizator nu este disponibil."
+            )
+
+        pending_count = connection.execute(
+            "SELECT COUNT(*) FROM registration_requests"
+        ).fetchone()[0]
+
+        if pending_count >= 100:
+            raise ValueError(
+                "Sunt prea multe cereri în așteptare. "
+                "Încearcă mai târziu."
+            )
+
+        cursor = connection.execute(
+            """
+            INSERT INTO registration_requests (
+                username,
+                password_hash,
+                created_at
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                normalized_username,
+                password_hash,
+                created_at,
+            ),
+        )
+        connection.commit()
+
+        return cursor.lastrowid
+    except sqlite3.IntegrityError as error:
+        raise RegistrationConflictError(
+            "Există deja o cerere pentru acest utilizator."
+        ) from error
+    finally:
+        connection.close()
+
+
+def record_registration_attempt(ip_address):
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO registration_attempts (
+                ip_address,
+                attempted_at
+            )
+            VALUES (?, ?)
+            """,
+            (
+                ip_address,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def count_recent_registration_attempts(
+    ip_address,
+    window_minutes=10,
+):
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=window_minutes)
+    ).isoformat()
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM registration_attempts
+            WHERE ip_address = ?
+              AND attempted_at >= ?
+            """,
+            (ip_address, cutoff),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+
+def list_registration_requests():
+    connection = open_database()
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                username,
+                created_at
+            FROM registration_requests
+            ORDER BY created_at ASC, id ASC
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def approve_registration_request(request_id):
+    connection = open_database()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        registration = connection.execute(
+            """
+            SELECT
+                id,
+                username,
+                password_hash
+            FROM registration_requests
+            WHERE id = ?
+            """,
+            (request_id,),
+        ).fetchone()
+
+        if registration is None:
+            raise ValueError("Cererea nu mai există.")
+
+        cursor = connection.execute(
+            """
+            INSERT INTO users (
+                username,
+                password_hash,
+                role,
+                created_at
+            )
+            VALUES (?, ?, 'user', ?)
+            """,
+            (
+                registration["username"],
+                registration["password_hash"],
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        connection.execute(
+            "DELETE FROM registration_requests WHERE id = ?",
+            (request_id,),
+        )
+        connection.commit()
+
+        return {
+            "id": cursor.lastrowid,
+            "username": registration["username"],
+            "role": "user",
+        }
+    except sqlite3.IntegrityError as error:
+        raise RegistrationConflictError(
+            "Numele de utilizator este deja folosit."
+        ) from error
+    finally:
+        connection.close()
+
+
+def reject_registration_request(request_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            "DELETE FROM registration_requests WHERE id = ?",
+            (request_id,),
+        )
+
+        if cursor.rowcount == 0:
+            raise ValueError("Cererea nu mai există.")
+
+        connection.commit()
     finally:
         connection.close()
 

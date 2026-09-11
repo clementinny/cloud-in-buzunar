@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=18"
+    href="{{ url_for('static', filename='css/app.css') }}?v=19"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=18"
+    src="{{ url_for('static', filename='js/app.js') }}?v=19"
     defer
 ></script>
 </head>
@@ -83,6 +83,50 @@
                     Deschide starea sistemului
                 </a>
             </article>
+
+            <article id="account-approvals-service" hidden>
+                <h3>Aprobări conturi</h3>
+                <p id="account-approvals-summary">
+                    Nu există cereri noi.
+                </p>
+                <a href="#registration-requests">
+                    Vezi cererile
+                </a>
+            </article>
+        </section>
+
+        <section
+            id="registration-requests"
+            aria-labelledby="registration-requests-title"
+            hidden
+        >
+            <div class="registration-toolbar">
+                <div>
+                    <h2 id="registration-requests-title">
+                        Cereri de cont
+                    </h2>
+                    <p id="registration-requests-count">
+                        0 cereri în așteptare
+                    </p>
+                </div>
+
+                <button
+                    id="refresh-registration-requests"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Reîncarcă
+                </button>
+            </div>
+
+            <p id="registration-requests-message">
+                Nu există cereri noi.
+            </p>
+
+            <ul
+                id="registration-requests-list"
+                aria-live="polite"
+            ></ul>
         </section>
 
         <section id="files" aria-labelledby="files-title">
@@ -260,6 +304,87 @@
 
             <button type="submit">
                 Conectare
+            </button>
+        </div>
+
+        <button
+            id="open-registration"
+            class="dialog-link-button"
+            type="button"
+        >
+            Nu ai cont? Trimite o cerere
+        </button>
+    </form>
+</dialog>
+
+<dialog id="registration-dialog">
+    <form id="registration-form">
+        <div>
+            <p class="dialog-label">Cont nou</p>
+            <h2>Solicită acces</h2>
+            <p class="dialog-description">
+                Contul devine activ după aprobarea unui administrator.
+            </p>
+        </div>
+
+        <label for="registration-username-input">
+            Utilizator
+        </label>
+        <input
+            id="registration-username-input"
+            name="username"
+            type="text"
+            autocomplete="username"
+            minlength="3"
+            maxlength="32"
+            pattern="[A-Za-z0-9_.-]+"
+            required
+        >
+
+        <label for="registration-password-input">
+            Parolă
+        </label>
+        <input
+            id="registration-password-input"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="128"
+            required
+        >
+
+        <label for="registration-password-confirmation">
+            Confirmă parola
+        </label>
+        <input
+            id="registration-password-confirmation"
+            name="password-confirmation"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="128"
+            required
+        >
+
+        <p
+            id="registration-message"
+            class="error-message"
+            role="status"
+            hidden
+        ></p>
+
+        <div class="dialog-actions">
+            <button
+                id="close-registration"
+                class="secondary-button"
+                type="button"
+            >
+                Înapoi
+            </button>
+
+            <button id="submit-registration" type="submit">
+                Trimite cererea
             </button>
         </div>
     </form>

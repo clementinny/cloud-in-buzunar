@@ -349,6 +349,23 @@ dialog input:focus {
     font-size: 0.9rem;
 }
 
+.error-message.is-success {
+    color: #86efac;
+}
+
+.dialog-link-button {
+    min-height: 0;
+    padding: 4px;
+    color: var(--accent-light);
+    border: 0;
+    background: transparent;
+}
+
+.dialog-link-button:hover:not(:disabled) {
+    text-decoration: underline;
+    background: transparent;
+}
+
 [hidden] {
     display: none !important;
 }
@@ -711,6 +728,78 @@ progress::-moz-progress-bar {
     font-size: 0.85rem;
 }
 
+#registration-requests {
+    background:
+        linear-gradient(
+            135deg,
+            rgba(34, 211, 238, 0.08),
+            rgba(139, 92, 246, 0.08)
+        ),
+        var(--surface);
+}
+
+.registration-toolbar,
+.registration-request-row,
+.registration-request-actions {
+    display: flex;
+    align-items: center;
+}
+
+.registration-toolbar,
+.registration-request-row {
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.registration-toolbar h2,
+.registration-toolbar p {
+    margin: 0;
+}
+
+.registration-toolbar p,
+#registration-requests-message {
+    color: var(--muted);
+}
+
+#registration-requests-message.is-error {
+    color: #fca5a5;
+}
+
+#registration-requests-list {
+    display: grid;
+    gap: 10px;
+    margin: 18px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.registration-request-row {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.registration-request-information {
+    display: grid;
+    gap: 5px;
+}
+
+.registration-request-information span {
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.registration-request-actions {
+    gap: 8px;
+}
+
+.registration-reject-button {
+    color: #fecaca;
+    border-color: rgba(239, 68, 68, 0.45);
+    background: rgba(127, 29, 29, 0.22);
+}
+
 @media (max-width: 620px) {
     .vault-mode-switch:not([hidden]) {
         flex-direction: column;
@@ -719,5 +808,15 @@ progress::-moz-progress-bar {
     .admin-vault-controls:not([hidden]) {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .registration-toolbar,
+    .registration-request-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .registration-request-actions button {
+        flex: 1;
     }
 }

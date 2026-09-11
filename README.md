@@ -33,6 +33,7 @@ local AI and administrative tools in one responsive web dashboard.
 - Session-based authentication
 - Administrator and regular-user roles
 - User activation and deactivation
+- Public account requests with administrator approval or rejection
 - Password and role management commands
 - Login throttling and login-attempt auditing
 - Generic authentication errors to avoid exposing account information
