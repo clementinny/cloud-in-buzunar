@@ -87,6 +87,70 @@ class SystemStatusRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), payload)
 
+    def test_resource_api_requires_admin(self):
+        self.assertEqual(
+            self.client.get("/api/system/resources").status_code,
+            401,
+        )
+        self.assertEqual(self.login("member").status_code, 200)
+        self.assertEqual(
+            self.client.get("/api/system/resources").status_code,
+            403,
+        )
+
+    def test_admin_can_read_resource_snapshot(self):
+        payload = {
+            "cpu": {"available": True, "usage_percent": 12.5},
+            "processes": [],
+            "managed_services": [],
+        }
+        self.assertEqual(self.login("admin").status_code, 200)
+
+        with (
+            patch.object(
+                self.status_module,
+                "collect_resource_usage",
+                return_value=payload,
+            ),
+            patch.object(
+                self.status_module,
+                "collect_battery_data",
+                return_value={
+                    "temperature": 35.4,
+                    "health": "GOOD",
+                },
+            ),
+        ):
+            response = self.client.get("/api/system/resources")
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()
+        self.assertEqual(result["cpu"]["usage_percent"], 12.5)
+        self.assertEqual(result["temperature"]["celsius"], 35.4)
+
+    def test_admin_can_control_only_supported_resource_services(self):
+        self.assertEqual(self.login("admin").status_code, 200)
+
+        with patch.object(
+            self.status_module,
+            "set_ai_enabled",
+            return_value=False,
+        ) as set_ai:
+            response = self.client.post(
+                "/api/system/resources/services/ai",
+                json={"enabled": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["enabled"])
+        set_ai.assert_called_once_with(False)
+
+        unsupported = self.client.post(
+            "/api/system/resources/services/web",
+            json={"enabled": False},
+        )
+        self.assertEqual(unsupported.status_code, 404)
+
     def test_status_collection_returns_every_service(self):
         payload = self.status_module.collect_system_status()
         service_ids = {

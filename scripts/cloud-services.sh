@@ -207,6 +207,30 @@ start_aria2() {
 }
 
 
+stop_aria2() {
+    if ! process_matches '(^|/)aria2c( |$)'; then
+        log_message INFO "aria2 este deja oprit."
+        return 0
+    fi
+
+    stop_matching_processes '(^|/)aria2c( |$)'
+
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        if ! process_matches '(^|/)aria2c( |$)'; then
+            log_message INFO "aria2 a fost oprit intenționat."
+            return 0
+        fi
+
+        sleep 1
+    done
+
+    log_message ERROR "aria2 nu s-a oprit în timpul alocat."
+    return 1
+}
+
+
 start_transmission() {
     [ "$START_TRANSMISSION" = true ] || return 0
 
@@ -291,6 +315,24 @@ start_ai() {
     fi
 
     log_message ERROR "AI-ul local nu a putut fi pornit."
+    return 1
+}
+
+
+stop_ai() {
+    if [ ! -x "$PYTHON" ]; then
+        log_message ERROR "Python din mediul virtual lipsește."
+        return 1
+    fi
+
+    cd "$PROJECT_DIR" || return 1
+
+    if "$PYTHON" -m app.ai_runtime stop >> "$LOG_DIR/ai-autostart.log" 2>&1; then
+        log_message INFO "AI-ul local a fost oprit intenționat."
+        return 0
+    fi
+
+    log_message ERROR "AI-ul local nu a putut fi oprit."
     return 1
 }
 
@@ -550,9 +592,21 @@ case "${1:-}" in
     transmission-stop)
         stop_transmission
         ;;
+    aria2-start)
+        start_aria2
+        ;;
+    aria2-stop)
+        stop_aria2
+        ;;
+    ai-start)
+        start_ai
+        ;;
+    ai-stop)
+        stop_ai
+        ;;
     *)
         printf '%s\n' \
-            "Utilizare: $0 {start|boot|watchdog|status|check|transmission-start|transmission-stop}"
+            "Utilizare: $0 {start|boot|watchdog|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop}"
         exit 1
         ;;
 esac

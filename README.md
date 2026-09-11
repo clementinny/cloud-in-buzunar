@@ -23,6 +23,8 @@ responsive web dashboard.
 - Opt-in camera and microphone streaming through WebRTC
 - Automatic rotating backups
 - Administrator-only system status dashboard
+- Live CPU, RAM, storage, network, GPU and process monitor
+- Safe dashboard controls for AI, aria2 and Transmission
 - Termux:Boot autostart, watchdog and daily backup supervision
 - Responsive interface built without a frontend framework
 
@@ -214,6 +216,7 @@ app/
 ├── message_crypto.py   Message encryption and key management
 ├── monitor.py          Local WebRTC signaling API
 ├── system_status.py    Read-only service health checks
+├── resource_monitor.py CPU, memory, network and process metrics
 ├── static/             JavaScript and CSS
 └── templates/          HTML templates
 scripts/

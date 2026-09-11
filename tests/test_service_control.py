@@ -53,5 +53,25 @@ class ServiceControlTest(unittest.TestCase):
         self.assertEqual(command[-1], "transmission-stop")
         self.assertNotIn("shell", run_command.call_args.kwargs)
 
+    def test_ai_and_aria2_controls_update_watchdog_settings(self):
+        with patch.object(
+            service_control.subprocess,
+            "run",
+        ) as run_command:
+            self.assertTrue(service_control.set_ai_enabled(True))
+            self.assertFalse(service_control.set_aria2_enabled(False))
+
+        saved_text = self.config_path.read_text(encoding="utf-8")
+        self.assertIn("START_AI=true", saved_text)
+        self.assertIn("START_ARIA2=false", saved_text)
+        self.assertEqual(
+            run_command.call_args_list[0].args[0][-1],
+            "ai-start",
+        )
+        self.assertEqual(
+            run_command.call_args_list[1].args[0][-1],
+            "aria2-stop",
+        )
+
 if __name__ == "__main__":
     unittest.main()

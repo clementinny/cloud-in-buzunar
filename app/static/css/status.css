@@ -225,6 +225,216 @@
     text-align: right;
 }
 
+.resource-monitor-panel {
+    display: grid;
+    gap: 20px;
+}
+
+.resource-monitor-heading,
+.process-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.resource-monitor-heading h2,
+.resource-monitor-heading p,
+.process-heading h3,
+.process-heading p,
+.resource-subtitle,
+.managed-service-row h4,
+.managed-service-row p {
+    margin: 0;
+}
+
+.resource-monitor-heading > div:first-child,
+.process-heading > div {
+    display: grid;
+    gap: 6px;
+}
+
+.resource-monitor-heading > div:first-child > p:last-child,
+.process-heading p,
+.managed-service-row p {
+    color: var(--muted);
+}
+
+.resource-monitor-actions {
+    display: grid;
+    grid-template-columns: minmax(190px, auto) auto;
+    align-items: end;
+    gap: 7px 10px;
+}
+
+.resource-monitor-actions label {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.resource-monitor-actions select {
+    min-width: 210px;
+}
+
+.resource-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 10px;
+}
+
+.resource-card {
+    display: grid;
+    min-height: 125px;
+    align-content: center;
+    gap: 7px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.52);
+}
+
+.resource-card span,
+.resource-card small {
+    color: var(--muted);
+}
+
+.resource-card strong {
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+}
+
+.resource-card.is-warning {
+    border-color: rgba(251, 191, 36, 0.45);
+    background: rgba(133, 77, 14, 0.16);
+}
+
+.resource-card.is-critical {
+    border-color: rgba(251, 113, 133, 0.5);
+    background: rgba(127, 29, 29, 0.22);
+}
+
+.resource-card.is-unknown strong {
+    color: var(--muted);
+    font-size: 1rem;
+}
+
+.resource-subtitle {
+    margin-bottom: 10px;
+}
+
+.managed-service-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.managed-service-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.52);
+}
+
+.managed-service-row > div {
+    grid-column: 1 / -1;
+}
+
+.managed-service-row > span {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.managed-service-row > span.is-running {
+    color: #86efac;
+}
+
+.managed-service-row button {
+    padding: 8px 12px;
+}
+
+.managed-service-row .danger-button {
+    color: #fecdd3;
+    border-color: rgba(251, 113, 133, 0.5);
+    background: rgba(127, 29, 29, 0.35);
+}
+
+.process-heading {
+    align-items: end;
+}
+
+.process-heading > p {
+    flex: 0 0 auto;
+    font-size: 0.82rem;
+}
+
+.process-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+
+.process-table {
+    width: 100%;
+    min-width: 710px;
+    border-collapse: collapse;
+}
+
+.process-table th,
+.process-table td {
+    padding: 12px 14px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+}
+
+.process-table th:first-child,
+.process-table td:first-child {
+    text-align: left;
+}
+
+.process-table td:first-child {
+    font-weight: 700;
+}
+
+.process-table tbody tr + tr {
+    border-top: 1px solid var(--border);
+}
+
+.process-table tbody tr:hover {
+    background: rgba(139, 92, 246, 0.06);
+}
+
+.process-table th {
+    color: var(--muted);
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgba(15, 23, 42, 0.75);
+}
+
+.process-table th:first-child,
+.process-table td:first-child {
+    text-align: left;
+}
+
+.process-table td:first-child {
+    max-width: 300px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.process-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.process-table tbody tr:hover {
+    background: rgba(139, 92, 246, 0.07);
+}
+
 .backup-restore-panel {
     display: grid;
     gap: 18px;
@@ -427,13 +637,55 @@
     }
 
     .backup-restore-heading,
+    .resource-monitor-heading,
+    .process-heading,
     .backup-row,
     .backup-actions {
         align-items: stretch;
         flex-direction: column;
     }
 
+    .resource-monitor-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .resource-monitor-actions label {
+        grid-column: auto;
+    }
+
+    .resource-monitor-actions select {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .managed-service-list {
+        grid-template-columns: 1fr;
+    }
+
     .backup-actions button {
         width: 100%;
+    }
+
+    .resource-monitor-heading,
+    .process-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .resource-monitor-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .resource-monitor-actions label {
+        grid-column: auto;
+    }
+
+    .resource-monitor-actions select {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .managed-service-list {
+        grid-template-columns: 1fr;
     }
 }

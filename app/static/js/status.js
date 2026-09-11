@@ -13,11 +13,28 @@ const backupActionStatus = document.querySelector(
 );
 const backupList = document.querySelector("#backup-list");
 const backupListEmpty = document.querySelector("#backup-list-empty");
+const refreshResourcesButton = document.querySelector(
+    "#refresh-resources-button",
+);
+const processSort = document.querySelector("#process-sort");
+const resourceError = document.querySelector("#resource-error");
+const resourceSummary = document.querySelector("#resource-summary");
+const managedServiceList = document.querySelector(
+    "#managed-service-list",
+);
+const processList = document.querySelector("#process-list");
+const processListEmpty = document.querySelector("#process-list-empty");
+const processNote = document.querySelector("#process-note");
+const resourceUpdated = document.querySelector("#resource-updated");
 
 const refreshIntervalMilliseconds = 10_000;
+const resourceRefreshIntervalMilliseconds = 8_000;
 let refreshTimer = null;
+let resourceRefreshTimer = null;
 let refreshInProgress = false;
 let backupRefreshInProgress = false;
+let resourceRefreshInProgress = false;
+let latestProcesses = [];
 
 const stateLabels = {
     healthy: "Funcționează",
@@ -184,6 +201,314 @@ function formatBackupDate(dateValue) {
         dateStyle: "medium",
         timeStyle: "medium",
     });
+}
+
+function formatDuration(secondsValue) {
+    const seconds = Math.max(0, Number(secondsValue) || 0);
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+        return `${days}z ${hours}h`;
+    }
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+
+    if (minutes > 0) {
+        return `${minutes}m`;
+    }
+
+    return `${Math.round(seconds)}s`;
+}
+
+function formatFrequency(hertz) {
+    const value = Number(hertz);
+
+    if (!Number.isFinite(value) || value <= 0) {
+        return "Frecvență indisponibilă";
+    }
+
+    return value >= 1_000_000_000
+        ? `${(value / 1_000_000_000).toFixed(2)} GHz`
+        : `${(value / 1_000_000).toFixed(0)} MHz`;
+}
+
+function createResourceCard(label, value, detail, state = "normal") {
+    const card = document.createElement("article");
+    card.className = `resource-card is-${state}`;
+    const labelElement = document.createElement("span");
+    const valueElement = document.createElement("strong");
+    const detailElement = document.createElement("small");
+
+    labelElement.textContent = label;
+    valueElement.textContent = value;
+    detailElement.textContent = detail;
+    card.append(labelElement, valueElement, detailElement);
+
+    return card;
+}
+
+function usageState(percent, warningAt = 75, criticalAt = 90) {
+    if (!Number.isFinite(percent)) {
+        return "unknown";
+    }
+
+    if (percent >= criticalAt) {
+        return "critical";
+    }
+
+    if (percent >= warningAt) {
+        return "warning";
+    }
+
+    return "normal";
+}
+
+function renderResourceSummary(payload) {
+    const cpu = payload.cpu || {};
+    const memory = payload.memory || {};
+    const storage = payload.storage || {};
+    const network = payload.network || {};
+    const gpu = payload.gpu || {};
+    const temperature = payload.temperature || {};
+    const cpuPercent = Number(cpu.usage_percent);
+    const memoryPercent = Number(memory.used_percent);
+    const storagePercent = Number(storage.used_percent);
+    const gpuHasUsage = (
+        gpu.usage_percent !== null &&
+        gpu.usage_percent !== undefined &&
+        Number.isFinite(Number(gpu.usage_percent))
+    );
+    const gpuPercent = gpuHasUsage ? Number(gpu.usage_percent) : null;
+    const temperatureCelsius = Number(temperature.celsius);
+    const networkDown = Number(network.received_bytes_per_second) || 0;
+    const networkUp = Number(network.sent_bytes_per_second) || 0;
+    const cards = [
+        createResourceCard(
+            "CPU total",
+            cpu.available ? `${cpuPercent.toFixed(1)}%` : "Indisponibil",
+            `${cpu.logical_cores || "?"} nuclee logice`,
+            usageState(cpuPercent),
+        ),
+        createResourceCard(
+            "RAM",
+            memory.available ? `${memoryPercent.toFixed(1)}%` : "Indisponibil",
+            memory.available
+                ? `${formatBytes(memory.used_bytes)} din ` +
+                  `${formatBytes(memory.total_bytes)}`
+                : "Android nu a expus memoria",
+            usageState(memoryPercent),
+        ),
+        createResourceCard(
+            "Stocare",
+            storage.available
+                ? `${storagePercent.toFixed(1)}%`
+                : "Indisponibil",
+            storage.available
+                ? `${formatBytes(storage.free_bytes)} liberi`
+                : "Spațiul nu poate fi citit",
+            usageState(storagePercent, 85, 95),
+        ),
+        createResourceCard(
+            "Rețea acum",
+            `↓ ${formatBytes(networkDown)}/s`,
+            `↑ ${formatBytes(networkUp)}/s · LAN + internet`,
+        ),
+        createResourceCard(
+            "GPU",
+            gpuHasUsage
+                ? `${gpuPercent.toFixed(1)}%`
+                : "Utilizare indisponibilă",
+            gpu.available
+                ? formatFrequency(gpu.current_frequency_hz)
+                : (gpu.note || "Restricționat de Android"),
+            gpuHasUsage ? usageState(gpuPercent) : "unknown",
+        ),
+        createResourceCard(
+            "Temperatură",
+            temperature.available && Number.isFinite(temperatureCelsius)
+                ? `${temperatureCelsius.toFixed(1)} °C`
+                : "Indisponibil",
+            temperature.health || "Temperatura bateriei",
+            temperatureCelsius >= 45
+                ? "critical"
+                : temperatureCelsius >= 40
+                    ? "warning"
+                    : "normal",
+        ),
+    ];
+
+    resourceSummary.replaceChildren(...cards);
+}
+
+function sortedProcesses() {
+    const processes = [...latestProcesses];
+
+    if (processSort.value === "ram") {
+        processes.sort((left, right) => right.rss_bytes - left.rss_bytes);
+    } else if (processSort.value === "name") {
+        processes.sort((left, right) => left.name.localeCompare(
+            right.name,
+            "ro",
+        ));
+    } else {
+        processes.sort((left, right) => (
+            right.cpu_percent - left.cpu_percent ||
+            right.rss_bytes - left.rss_bytes
+        ));
+    }
+
+    return processes;
+}
+
+function renderProcesses() {
+    const processes = sortedProcesses();
+    const rows = processes.map((process) => {
+        const row = document.createElement("tr");
+        const values = [
+            process.name,
+            String(process.pid),
+            `${Number(process.cpu_percent).toFixed(1)}%`,
+            `${Number(process.ram_percent).toFixed(2)}%`,
+            formatBytes(process.rss_bytes),
+            formatDuration(process.uptime_seconds),
+        ];
+
+        for (const value of values) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.append(cell);
+        }
+
+        return row;
+    });
+
+    processList.replaceChildren(...rows);
+    processListEmpty.hidden = processes.length !== 0;
+}
+
+async function setManagedService(service, enabled) {
+    if (
+        !enabled &&
+        !window.confirm(
+            `Oprești ${service.name}? ${service.impact}`,
+        )
+    ) {
+        return;
+    }
+
+    for (const button of managedServiceList.querySelectorAll("button")) {
+        button.disabled = true;
+    }
+    resourceError.hidden = true;
+
+    try {
+        const response = await fetch(
+            `/api/system/resources/services/${encodeURIComponent(service.id)}`,
+            {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ enabled }),
+            },
+        );
+        await readJsonResponse(response);
+        await loadResources();
+        loadSystemStatus();
+    } catch (error) {
+        resourceError.textContent = error.message;
+        resourceError.hidden = false;
+    } finally {
+        for (const button of managedServiceList.querySelectorAll("button")) {
+            button.disabled = false;
+        }
+    }
+}
+
+function renderManagedServices(services) {
+    const rows = services.map((service) => {
+        const row = document.createElement("article");
+        row.className = "managed-service-row";
+        const information = document.createElement("div");
+        const title = document.createElement("h4");
+        const detail = document.createElement("p");
+        const state = document.createElement("span");
+        const button = document.createElement("button");
+
+        title.textContent = service.name;
+        detail.textContent = service.impact;
+        state.className = service.running ? "is-running" : "is-stopped";
+        state.textContent = service.running
+            ? (service.enabled ? "Pornit" : "Pornit manual")
+            : (service.enabled ? "Așteaptă repornirea" : "Oprit");
+        button.type = "button";
+        button.textContent = service.running ? "Oprește" : "Pornește";
+        button.className = service.running ? "danger-button" : "";
+        button.addEventListener("click", () => {
+            setManagedService(service, !service.running);
+        });
+
+        information.append(title, detail);
+        row.append(information, state, button);
+
+        return row;
+    });
+
+    managedServiceList.replaceChildren(...rows);
+}
+
+function renderResources(payload) {
+    renderResourceSummary(payload);
+    latestProcesses = Array.isArray(payload.processes)
+        ? payload.processes
+        : [];
+    renderProcesses();
+    renderManagedServices(
+        Array.isArray(payload.managed_services)
+            ? payload.managed_services
+            : [],
+    );
+    processNote.textContent = payload.process_note || processNote.textContent;
+
+    const generatedAt = new Date(payload.generated_at);
+    resourceUpdated.textContent = Number.isNaN(generatedAt.getTime())
+        ? "Actualizat acum"
+        : `Măsurat la ${generatedAt.toLocaleTimeString("ro-RO", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+        })}`;
+}
+
+async function loadResources() {
+    if (resourceRefreshInProgress) {
+        return;
+    }
+
+    resourceRefreshInProgress = true;
+    refreshResourcesButton.disabled = true;
+    refreshResourcesButton.textContent = "Se măsoară...";
+    resourceError.hidden = true;
+
+    try {
+        const response = await fetch("/api/system/resources", {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+        });
+        renderResources(await readJsonResponse(response));
+    } catch (error) {
+        resourceError.textContent = error.message;
+        resourceError.hidden = false;
+    } finally {
+        resourceRefreshInProgress = false;
+        refreshResourcesButton.disabled = false;
+        refreshResourcesButton.textContent = "Actualizează";
+    }
 }
 
 function showBackupActionStatus(message, isError = false) {
@@ -370,6 +695,8 @@ async function loadBackups() {
 
 refreshButton.addEventListener("click", loadSystemStatus);
 refreshBackupsButton.addEventListener("click", loadBackups);
+refreshResourcesButton.addEventListener("click", loadResources);
+processSort.addEventListener("change", renderProcesses);
 
 refreshTimer = window.setInterval(() => {
     if (document.visibilityState === "visible") {
@@ -377,9 +704,17 @@ refreshTimer = window.setInterval(() => {
     }
 }, refreshIntervalMilliseconds);
 
+resourceRefreshTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+        loadResources();
+    }
+}, resourceRefreshIntervalMilliseconds);
+
 window.addEventListener("pagehide", () => {
     window.clearInterval(refreshTimer);
+    window.clearInterval(resourceRefreshTimer);
 });
 
 loadSystemStatus();
 loadBackups();
+loadResources();

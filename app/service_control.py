@@ -11,6 +11,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 SERVICE_MANAGER = PROJECT_DIR / "scripts" / "cloud-services.sh"
 
 MANAGED_BOOLEAN_SETTINGS = {
+    "START_AI",
+    "START_ARIA2",
     "START_TRANSMISSION",
 }
 
@@ -155,3 +157,80 @@ def set_transmission_enabled(enabled):
         ) from error
 
     return enabled
+
+
+def aria2_is_enabled():
+    return read_boolean_setting(
+        "START_ARIA2",
+        default=True,
+    )
+
+
+def ai_is_enabled():
+    return read_boolean_setting(
+        "START_AI",
+        default=False,
+    )
+
+
+def set_managed_service_enabled(
+    setting_name,
+    enabled,
+    start_command,
+    stop_command,
+    display_name,
+    default_enabled,
+):
+    enabled = bool(enabled)
+    previous_value = read_boolean_setting(
+        setting_name,
+        default=default_enabled,
+    )
+    write_boolean_setting(setting_name, enabled)
+    command = start_command if enabled else stop_command
+
+    try:
+        subprocess.run(
+            [str(SERVICE_MANAGER), command],
+            cwd=PROJECT_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=75 if enabled else 25,
+        )
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ) as error:
+        if enabled:
+            write_boolean_setting(setting_name, previous_value)
+
+        action = "pornit" if enabled else "oprit"
+        raise ServiceControlError(
+            f"{display_name} nu a putut fi {action}."
+        ) from error
+
+    return enabled
+
+
+def set_aria2_enabled(enabled):
+    return set_managed_service_enabled(
+        "START_ARIA2",
+        enabled,
+        "aria2-start",
+        "aria2-stop",
+        "aria2",
+        True,
+    )
+
+
+def set_ai_enabled(enabled):
+    return set_managed_service_enabled(
+        "START_AI",
+        enabled,
+        "ai-start",
+        "ai-stop",
+        "AI-ul local",
+        False,
+    )

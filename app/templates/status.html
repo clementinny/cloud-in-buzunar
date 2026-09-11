@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/status.css') }}?v=2"
+        href="{{ url_for('static', filename='css/status.css') }}?v=3"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/status.js') }}?v=2"
+        src="{{ url_for('static', filename='js/status.js') }}?v=3"
     ></script>
 </head>
 
@@ -60,6 +60,78 @@
         </section>
 
         <p id="status-error" class="status-error" role="alert" hidden></p>
+
+        <section class="resource-monitor-panel">
+            <div class="resource-monitor-heading">
+                <div>
+                    <p class="status-section-label">Task Manager</p>
+                    <h2>Consum resurse</h2>
+                    <p>
+                        Vezi ce folosește CPU, RAM, stocare și rețea pe
+                        telefon, apoi oprește numai serviciile gestionate.
+                    </p>
+                </div>
+
+                <div class="resource-monitor-actions">
+                    <label for="process-sort">Sortează procesele</label>
+                    <select id="process-sort">
+                        <option value="cpu">CPU descrescător</option>
+                        <option value="ram">RAM descrescător</option>
+                        <option value="name">Nume</option>
+                    </select>
+                    <button id="refresh-resources-button" type="button">
+                        Actualizează
+                    </button>
+                </div>
+            </div>
+
+            <p id="resource-error" class="status-error" role="alert" hidden></p>
+
+            <div id="resource-summary" class="resource-summary">
+                <article><span>CPU</span><strong>—</strong><small>Se măsoară</small></article>
+                <article><span>RAM</span><strong>—</strong><small>Se măsoară</small></article>
+                <article><span>Stocare</span><strong>—</strong><small>Se măsoară</small></article>
+                <article><span>Rețea</span><strong>—</strong><small>Se măsoară</small></article>
+                <article><span>GPU</span><strong>—</strong><small>Se verifică</small></article>
+                <article><span>Temperatură</span><strong>—</strong><small>Se verifică</small></article>
+            </div>
+
+            <div>
+                <h3 class="resource-subtitle">Servicii controlabile</h3>
+                <div id="managed-service-list" class="managed-service-list"></div>
+            </div>
+
+            <div class="process-heading">
+                <div>
+                    <h3>Procese Termux</h3>
+                    <p id="process-note">
+                        Sunt afișate numai procesele pe care Android permite
+                        aplicației Termux să le inspecteze.
+                    </p>
+                </div>
+                <p id="resource-updated">—</p>
+            </div>
+
+            <div class="process-table-wrapper">
+                <table class="process-table">
+                    <thead>
+                        <tr>
+                            <th>Proces</th>
+                            <th>PID</th>
+                            <th>CPU</th>
+                            <th>RAM</th>
+                            <th>Memorie</th>
+                            <th>Uptime</th>
+                        </tr>
+                    </thead>
+                    <tbody id="process-list"></tbody>
+                </table>
+            </div>
+
+            <p id="process-list-empty" class="backup-list-empty" hidden>
+                Android nu a expus niciun proces către Termux.
+            </p>
+        </section>
 
         <section
             id="service-grid"
@@ -121,8 +193,9 @@
             </div>
             <p>
                 Verificarea stării nu pornește și nu oprește automat
-                serviciile. Restaurarea rulează numai după confirmarea
-                explicită a administratorului.
+                serviciile. Numai butoanele dedicate pot controla AI,
+                aria2 și Transmission. Restaurarea rulează numai după
+                confirmarea explicită a administratorului.
             </p>
         </section>
     </main>

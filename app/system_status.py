@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
+from threading import Lock
 
 from flask import (
     Blueprint,
@@ -16,6 +17,7 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
@@ -34,7 +36,16 @@ from app.downloads import (
     transmission_call,
 )
 from app.speech_activity import speech_analysis_available
-from app.service_control import transmission_is_enabled
+from app.resource_monitor import collect_resource_usage
+from app.service_control import (
+    ServiceControlError,
+    ai_is_enabled,
+    aria2_is_enabled,
+    set_ai_enabled,
+    set_aria2_enabled,
+    set_transmission_enabled,
+    transmission_is_enabled,
+)
 
 
 system_status_blueprint = Blueprint("system_status", __name__)
@@ -45,6 +56,12 @@ AUTOSTART_CONFIG_FILE = DATA_DIR / "autostart.conf"
 WATCHDOG_PID_FILE = DATA_DIR / "runtime" / "cloud-watchdog.pid"
 SERVICE_LOG_FILE = DATA_DIR / "logs" / "cloud-services.log"
 SERVER_STARTED_AT = time.monotonic()
+BATTERY_CACHE_SECONDS = 5
+BATTERY_CACHE_LOCK = Lock()
+BATTERY_CACHE = {
+    "collected_at": 0.0,
+    "value": None,
+}
 
 
 def get_session_user():
@@ -362,14 +379,29 @@ def collect_battery_from_termux():
     return payload
 
 
+def collect_battery_data():
+    now = time.monotonic()
+
+    with BATTERY_CACHE_LOCK:
+        if now - BATTERY_CACHE["collected_at"] < BATTERY_CACHE_SECONDS:
+            return BATTERY_CACHE["value"]
+
+        battery = collect_battery_from_sysfs()
+
+        if not battery or "temperature" not in battery:
+            termux_battery = collect_battery_from_termux()
+
+            if termux_battery:
+                battery = {**(battery or {}), **termux_battery}
+
+        BATTERY_CACHE["collected_at"] = time.monotonic()
+        BATTERY_CACHE["value"] = battery
+
+        return battery
+
+
 def collect_battery_service():
-    battery = collect_battery_from_sysfs()
-
-    if not battery or "temperature" not in battery:
-        termux_battery = collect_battery_from_termux()
-
-        if termux_battery:
-            battery = {**(battery or {}), **termux_battery}
+    battery = collect_battery_data()
 
     if not battery:
         return service_result(
@@ -478,6 +510,14 @@ def port_is_open(port):
 
 
 def collect_aria2_service():
+    if not aria2_is_enabled():
+        return service_result(
+            "aria2",
+            "aria2",
+            "idle",
+            "Oprit intenționat din monitorul de resurse.",
+        )
+
     if not port_is_open(6800):
         return service_result(
             "aria2",
@@ -563,6 +603,16 @@ def collect_ai_service():
         )
 
     if not status["online"]:
+        if ai_is_enabled():
+            return service_result(
+                "ai",
+                "AI local",
+                "offline",
+                "AI-ul este activat, dar procesul nu răspunde.",
+                [metric("Model configurat", status["model"])],
+                impact="warning",
+            )
+
         return service_result(
             "ai",
             "AI local",
@@ -809,3 +859,73 @@ def system_status_page():
 @require_status_admin
 def system_status_api():
     return jsonify(collect_system_status())
+
+
+@system_status_blueprint.get("/api/system/resources")
+@require_status_admin
+def system_resources_api():
+    payload = collect_resource_usage()
+    battery = collect_battery_data()
+
+    temperature = None
+
+    if battery and battery.get("temperature") is not None:
+        try:
+            temperature = float(battery["temperature"])
+        except (TypeError, ValueError):
+            pass
+
+    payload["temperature"] = {
+        "available": temperature is not None,
+        "celsius": temperature,
+        "health": battery.get("health") if battery else None,
+    }
+
+    return jsonify(payload)
+
+
+@system_status_blueprint.post(
+    "/api/system/resources/services/<string:service_id>"
+)
+@require_status_admin
+def system_resource_service_control(service_id):
+    payload = request.get_json(silent=True)
+
+    if (
+        not isinstance(payload, dict)
+        or type(payload.get("enabled")) is not bool
+    ):
+        return jsonify(
+            {"error": "Câmpul enabled trebuie să fie boolean."}
+        ), 400
+
+    controls = {
+        "ai": ("AI-ul local", set_ai_enabled),
+        "aria2": ("aria2", set_aria2_enabled),
+        "transmission": ("Transmission", set_transmission_enabled),
+    }
+    control = controls.get(service_id)
+
+    if control is None:
+        return jsonify(
+            {"error": "Serviciul nu poate fi controlat de aici."}
+        ), 404
+
+    display_name, set_enabled = control
+
+    try:
+        enabled = set_enabled(payload["enabled"])
+    except ServiceControlError as error:
+        return jsonify({"error": str(error)}), 503
+
+    return jsonify(
+        {
+            "id": service_id,
+            "enabled": enabled,
+            "message": (
+                f"{display_name} a fost pornit."
+                if enabled
+                else f"{display_name} a fost oprit."
+            ),
+        }
+    )
