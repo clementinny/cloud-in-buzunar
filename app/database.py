@@ -403,6 +403,38 @@ CREATE TABLE IF NOT EXISTS system_alert_deliveries (
 )
 """
 
+WEB_WATCHER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS web_watchers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    mode TEXT NOT NULL
+        CHECK (mode IN ('change', 'contains', 'missing')),
+    needle TEXT,
+    interval_minutes INTEGER NOT NULL
+        CHECK (interval_minutes BETWEEN 15 AND 1440),
+    enabled INTEGER NOT NULL DEFAULT 1
+        CHECK (enabled IN (0, 1)),
+    last_hash TEXT,
+    last_match INTEGER CHECK (last_match IS NULL OR last_match IN (0, 1)),
+    last_status TEXT NOT NULL DEFAULT 'never'
+        CHECK (last_status IN ('never', 'ok', 'changed', 'alert', 'error')),
+    last_checked_at TEXT,
+    next_check_at TEXT,
+    last_changed_at TEXT,
+    last_error TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0
+        CHECK (consecutive_failures >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+WEB_WATCHER_DUE_INDEX = """
+CREATE INDEX IF NOT EXISTS web_watchers_due
+ON web_watchers (enabled, next_check_at, id)
+"""
+
 
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -610,6 +642,8 @@ def initialize_database():
         connection.execute(SYSTEM_ALERT_EVENT_INDEX)
         connection.execute(SYSTEM_ALERT_STATE_SCHEMA)
         connection.execute(SYSTEM_ALERT_DELIVERY_SCHEMA)
+        connection.execute(WEB_WATCHER_SCHEMA)
+        connection.execute(WEB_WATCHER_DUE_INDEX)
         connection.commit()
     finally:
         connection.close()
@@ -1472,6 +1506,311 @@ def prune_system_alert_events(keep_days=30):
         )
         connection.commit()
         return cursor.rowcount
+    finally:
+        connection.close()
+
+
+def create_web_watcher(name, url, mode, needle, interval_minutes, enabled=True):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            INSERT INTO web_watchers (
+                name,
+                url,
+                mode,
+                needle,
+                interval_minutes,
+                enabled,
+                next_check_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                name,
+                url,
+                mode,
+                needle,
+                int(interval_minutes),
+                int(bool(enabled)),
+                now if enabled else None,
+                now,
+                now,
+            ),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    finally:
+        connection.close()
+
+
+def list_web_watchers():
+    connection = open_database()
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM web_watchers
+            ORDER BY created_at DESC, id DESC
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def find_web_watcher(watcher_id):
+    connection = open_database()
+
+    try:
+        row = connection.execute(
+            "SELECT * FROM web_watchers WHERE id = ?",
+            (int(watcher_id),),
+        ).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        connection.close()
+
+
+def list_due_web_watchers(limit=3, now=None):
+    checked_at = (now or datetime.now(timezone.utc)).isoformat()
+    connection = open_database()
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM web_watchers
+            WHERE enabled = 1
+              AND (next_check_at IS NULL OR next_check_at <= ?)
+            ORDER BY COALESCE(next_check_at, created_at), id
+            LIMIT ?
+            """,
+            (checked_at, min(20, max(1, int(limit)))),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def update_web_watcher(
+    watcher_id,
+    *,
+    name,
+    url,
+    mode,
+    needle,
+    interval_minutes,
+    enabled,
+):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE web_watchers
+            SET name = ?,
+                url = ?,
+                mode = ?,
+                needle = ?,
+                interval_minutes = ?,
+                enabled = ?,
+                last_hash = NULL,
+                last_match = NULL,
+                last_status = 'never',
+                last_checked_at = NULL,
+                next_check_at = ?,
+                last_changed_at = NULL,
+                last_error = NULL,
+                consecutive_failures = 0,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                name,
+                url,
+                mode,
+                needle,
+                int(interval_minutes),
+                int(bool(enabled)),
+                now if enabled else None,
+                now,
+                int(watcher_id),
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
+
+
+def set_web_watcher_enabled(watcher_id, enabled):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE web_watchers
+            SET enabled = ?,
+                next_check_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                int(bool(enabled)),
+                now if enabled else None,
+                now,
+                int(watcher_id),
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
+
+
+def save_web_watcher_result(
+    watcher_id,
+    *,
+    content_hash,
+    matched,
+    status,
+    error,
+    failures,
+    changed,
+    checked_at,
+):
+    next_check_at = checked_at + timedelta(
+        minutes=find_web_watcher(watcher_id)["interval_minutes"]
+    )
+    checked_iso = checked_at.isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE web_watchers
+            SET last_hash = ?,
+                last_match = ?,
+                last_status = ?,
+                last_checked_at = ?,
+                next_check_at = ?,
+                last_changed_at = CASE
+                    WHEN ? THEN ?
+                    ELSE last_changed_at
+                END,
+                last_error = ?,
+                consecutive_failures = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                content_hash,
+                None if matched is None else int(bool(matched)),
+                status,
+                checked_iso,
+                next_check_at.isoformat(),
+                int(bool(changed)),
+                checked_iso,
+                error,
+                int(failures),
+                checked_iso,
+                int(watcher_id),
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def delete_web_watcher(watcher_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            "DELETE FROM web_watchers WHERE id = ?",
+            (int(watcher_id),),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
+
+
+def save_web_watcher_result(
+    watcher_id,
+    *,
+    content_hash,
+    matched,
+    status,
+    error,
+    failures,
+    changed,
+    checked_at=None,
+):
+    current_time = checked_at or datetime.now(timezone.utc)
+    watcher = find_web_watcher(watcher_id)
+
+    if watcher is None:
+        return False
+
+    next_check = current_time + timedelta(
+        minutes=int(watcher["interval_minutes"])
+    )
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE web_watchers
+            SET last_hash = ?,
+                last_match = ?,
+                last_status = ?,
+                last_checked_at = ?,
+                next_check_at = CASE WHEN enabled = 1 THEN ? ELSE NULL END,
+                last_changed_at = CASE WHEN ? THEN ? ELSE last_changed_at END,
+                last_error = ?,
+                consecutive_failures = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                content_hash,
+                None if matched is None else int(bool(matched)),
+                status,
+                current_time.isoformat(),
+                next_check.isoformat(),
+                int(bool(changed)),
+                current_time.isoformat(),
+                error,
+                int(failures),
+                current_time.isoformat(),
+                int(watcher_id),
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
+
+
+def delete_web_watcher(watcher_id):
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            "DELETE FROM web_watchers WHERE id = ?",
+            (int(watcher_id),),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
     finally:
         connection.close()
 

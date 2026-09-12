@@ -10,10 +10,10 @@
     <title>CloudInBuzunar</title>
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/app.css') }}?v=22"
+    href="{{ url_for('static', filename='css/app.css') }}?v=23"
 >
 <script
-    src="{{ url_for('static', filename='js/app.js') }}?v=22"
+    src="{{ url_for('static', filename='js/app.js') }}?v=23"
     defer
 ></script>
 </head>
@@ -94,6 +94,17 @@
                 </p>
                 <a href="{{ url_for('system_status.system_status_page') }}">
                     Deschide starea sistemului
+                </a>
+            </article>
+
+            <article id="web-watchers-service" hidden>
+                <h3>Urmăriri automate</h3>
+                <p>
+                    Verifică periodic pagini publice și primește alerte
+                    când apare o schimbare importantă.
+                </p>
+                <a href="{{ url_for('web_watchers.watchers_page') }}">
+                    Deschide urmăririle
                 </a>
             </article>
 

@@ -107,20 +107,18 @@ class SystemStatusRoutesTest(unittest.TestCase):
         }
         self.assertEqual(self.login("admin").status_code, 200)
 
-        with (
-            patch.object(
-                self.status_module,
-                "collect_resource_usage",
-                return_value=payload,
-            ),
-            patch.object(
-                self.status_module,
-                "collect_battery_data",
-                return_value={
-                    "temperature": 35.4,
-                    "health": "GOOD",
+        with patch.object(
+            self.status_module,
+            "collect_background_snapshot",
+            return_value={
+                "resources": payload,
+                "power": {
+                    "battery": {
+                        "temperature_c": 35.4,
+                        "health": "GOOD",
+                    }
                 },
-            ),
+            },
         ):
             response = self.client.get("/api/system/resources")
 

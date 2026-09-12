@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f172a">
+    <title>Urmăriri automate · CloudInBuzunar</title>
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/app.css') }}?v=22"
+    >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/watchers.css') }}?v=1"
+    >
+    <script
+        defer
+        src="{{ url_for('static', filename='js/watchers.js') }}?v=1"
+    ></script>
+</head>
+<body class="watchers-page">
+    <header>
+        <a href="/">← Dashboard</a>
+        <p class="page-label">CloudInBuzunar · Automatizări</p>
+        <h1>Urmăriri automate</h1>
+        <p>
+            Serverul verifică periodic pagini publice și te anunță când
+            găsește ce cauți sau când conținutul se schimbă.
+        </p>
+    </header>
+
+    <main>
+        <p id="page-message" role="alert" hidden></p>
+
+        <section class="watcher-editor" aria-labelledby="editor-title">
+            <div>
+                <p class="eyebrow">URMĂRIRE NOUĂ</p>
+                <h2 id="editor-title">Ce vrei să verific?</h2>
+                <p>
+                    Folosește doar pagini publice. Serverul nu trimite
+                    parole, cookie-uri și nu accesează adrese din rețeaua locală.
+                </p>
+            </div>
+
+            <form id="watcher-form">
+                <input id="watcher-id" type="hidden">
+
+                <label>
+                    Nume
+                    <input
+                        id="watcher-name"
+                        maxlength="80"
+                        placeholder="Exemplu: Produsul dorit"
+                        required
+                    >
+                </label>
+
+                <label class="wide-field">
+                    Adresa paginii
+                    <input
+                        id="watcher-url"
+                        type="url"
+                        maxlength="2048"
+                        placeholder="https://exemplu.ro/pagina"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Ce urmărești
+                    <select id="watcher-mode">
+                        <option value="contains">Apare un text</option>
+                        <option value="missing">Dispare un text</option>
+                        <option value="change">Se schimbă pagina</option>
+                    </select>
+                </label>
+
+                <label id="needle-field" class="wide-field">
+                    Text urmărit
+                    <input
+                        id="watcher-needle"
+                        maxlength="500"
+                        placeholder="Exemplu: În stoc"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Verifică la
+                    <select id="watcher-interval">
+                        <option value="15">15 minute</option>
+                        <option value="30">30 minute</option>
+                        <option value="60" selected>1 oră</option>
+                        <option value="180">3 ore</option>
+                        <option value="360">6 ore</option>
+                        <option value="720">12 ore</option>
+                        <option value="1440">24 ore</option>
+                    </select>
+                </label>
+
+                <label class="switch-field">
+                    <input id="watcher-enabled" type="checkbox" checked>
+                    <span>Activă imediat</span>
+                </label>
+
+                <div class="form-actions wide-field">
+                    <button id="save-watcher" type="submit">
+                        Salvează urmărirea
+                    </button>
+                    <button
+                        id="cancel-edit"
+                        class="secondary-button"
+                        type="button"
+                        hidden
+                    >
+                        Renunță la editare
+                    </button>
+                </div>
+                <p id="form-message" class="wide-field" role="status"></p>
+            </form>
+        </section>
+
+        <section class="watcher-list-section" aria-labelledby="list-title">
+            <div class="list-heading">
+                <div>
+                    <p class="eyebrow">BOT 24/7</p>
+                    <h2 id="list-title">Urmăririle tale</h2>
+                    <p id="watcher-count">Se încarcă...</p>
+                </div>
+                <button id="refresh-watchers" class="secondary-button" type="button">
+                    Reîncarcă
+                </button>
+            </div>
+
+            <div id="watcher-list" class="watcher-list"></div>
+            <p id="watcher-empty" class="empty-state" hidden>
+                Nu ai configurat încă nicio urmărire.
+            </p>
+        </section>
+
+        <p class="privacy-note">
+            Intervalul minim este 15 minute, răspunsul maxim este 1 MB, iar
+            alertele ajung în aplicația asociată prin sistemul existent.
+            Paginile care necesită autentificare sau execută conținut numai
+            prin JavaScript pot să nu fie potrivite pentru această funcție.
+        </p>
+    </main>
+</body>
+</html>

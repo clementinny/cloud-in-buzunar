@@ -18,6 +18,7 @@ SERVICE_LOG="$LOG_DIR/cloud-services.log"
 WATCHDOG_LOG="$LOG_DIR/cloud-watchdog.log"
 BACKUP_LOG="$LOG_DIR/backup.log"
 THERMAL_LOG="$LOG_DIR/thermal-guardian.log"
+WEB_WATCHER_LOG="$LOG_DIR/web-watchers.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
 
@@ -553,6 +554,28 @@ start_backup_if_due() {
 }
 
 
+start_web_watchers_if_due() {
+    [ -x "$PYTHON" ] || return 0
+
+    local lock_dir="$RUNTIME_DIR/web-watchers.lock"
+
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        return 0
+    fi
+
+    (
+        trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
+        cd "$PROJECT_DIR" || exit 1
+
+        if ! "$PYTHON" -m app.web_watchers check-due --limit 3 \
+            >> "$WEB_WATCHER_LOG" 2>&1; then
+            log_message WARN \
+                "Verificarea paginilor urmărite a eșuat; vezi $WEB_WATCHER_LOG."
+        fi
+    ) &
+}
+
+
 watchdog_is_running() {
     local process_id
     local command_line
@@ -662,6 +685,7 @@ run_watchdog() {
     local ai_failures=0
     local https_failures=0
     local last_backup_check=0
+    local last_web_watcher_check=0
     local current_time
     local watchdog_interval
 
@@ -766,6 +790,11 @@ run_watchdog() {
         if [ $((current_time - last_backup_check)) -ge 3600 ]; then
             start_backup_if_due
             last_backup_check="$current_time"
+        fi
+
+        if [ $((current_time - last_web_watcher_check)) -ge 300 ]; then
+            start_web_watchers_if_due
+            last_web_watcher_check="$current_time"
         fi
 
         sleep "$watchdog_interval" &
