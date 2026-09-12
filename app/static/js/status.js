@@ -56,6 +56,32 @@ const temperatureHistoryChart = document.querySelector(
     "#temperature-history-chart",
 );
 const historyEmpty = document.querySelector("#history-empty");
+const alertSettingsForm = document.querySelector("#alert-settings-form");
+const alertsEnabled = document.querySelector("#alerts-enabled");
+const alertServer = document.querySelector("#alert-server");
+const alertCharger = document.querySelector("#alert-charger");
+const alertBattery = document.querySelector("#alert-battery");
+const alertThermal = document.querySelector("#alert-thermal");
+const alertStorage = document.querySelector("#alert-storage");
+const alertServices = document.querySelector("#alert-services");
+const alertBatteryThreshold = document.querySelector(
+    "#alert-battery-threshold",
+);
+const alertStorageThreshold = document.querySelector(
+    "#alert-storage-threshold",
+);
+const alertThermalThreshold = document.querySelector(
+    "#alert-thermal-threshold",
+);
+const alertCooldown = document.querySelector("#alert-cooldown");
+const checkAlertsButton = document.querySelector("#check-alerts-button");
+const testAlertButton = document.querySelector("#test-alert-button");
+const alertsMessage = document.querySelector("#alerts-message");
+const activeAlertCount = document.querySelector("#active-alert-count");
+const activeAlertList = document.querySelector("#active-alert-list");
+const activeAlertEmpty = document.querySelector("#active-alert-empty");
+const alertHistoryList = document.querySelector("#alert-history-list");
+const alertHistoryEmpty = document.querySelector("#alert-history-empty");
 
 const refreshIntervalMilliseconds = 10_000;
 const resourceRefreshIntervalMilliseconds = 8_000;
@@ -67,6 +93,7 @@ let refreshInProgress = false;
 let backupRefreshInProgress = false;
 let resourceRefreshInProgress = false;
 let powerRefreshInProgress = false;
+let alertsRefreshInProgress = false;
 let latestProcesses = [];
 
 const stateLabels = {
@@ -1118,6 +1145,183 @@ async function loadBackups() {
     }
 }
 
+function showAlertsMessage(message, isError = false) {
+    alertsMessage.textContent = message;
+    alertsMessage.className = isError ? "is-error" : "";
+    alertsMessage.hidden = false;
+}
+
+function formatAlertDate(value) {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "Dată necunoscută";
+    }
+
+    return date.toLocaleString("ro-RO", {
+        dateStyle: "short",
+        timeStyle: "medium",
+    });
+}
+
+function createAlertRow(alert, active = false) {
+    const row = document.createElement("article");
+    const severity = alert.severity || "info";
+    row.className = `alert-row is-${severity}`;
+
+    const indicator = document.createElement("span");
+    indicator.className = "alert-row-indicator";
+
+    const information = document.createElement("div");
+    const title = document.createElement("h4");
+    const message = document.createElement("p");
+    title.textContent = alert.title || "Alertă";
+    message.textContent = alert.message || "—";
+    information.append(title, message);
+
+    const time = document.createElement("time");
+    time.dateTime = active ? alert.first_seen_at : alert.created_at;
+    time.textContent = active
+        ? `Activă din ${formatAlertDate(alert.first_seen_at)}`
+        : formatAlertDate(alert.created_at);
+
+    row.append(indicator, information, time);
+    return row;
+}
+
+function renderAlertSettings(settings) {
+    alertsEnabled.checked = Boolean(settings.enabled);
+    alertServer.checked = Boolean(settings.alert_server);
+    alertCharger.checked = Boolean(settings.alert_charger);
+    alertBattery.checked = Boolean(settings.alert_battery);
+    alertThermal.checked = Boolean(settings.alert_thermal);
+    alertStorage.checked = Boolean(settings.alert_storage);
+    alertServices.checked = Boolean(settings.alert_services);
+    alertBatteryThreshold.value = settings.battery_low_percent;
+    alertStorageThreshold.value = settings.storage_warning_percent;
+    alertThermalThreshold.value = settings.thermal_warning_c;
+    alertCooldown.value = String(settings.cooldown_minutes);
+}
+
+function renderAlerts(payload) {
+    const activeAlerts = Array.isArray(payload.active_alerts)
+        ? payload.active_alerts
+        : [];
+    const history = Array.isArray(payload.alerts) ? payload.alerts : [];
+
+    renderAlertSettings(payload.settings || {});
+    activeAlertList.replaceChildren(
+        ...activeAlerts.map((alert) => createAlertRow(alert, true)),
+    );
+    alertHistoryList.replaceChildren(
+        ...[...history].reverse().map((alert) => createAlertRow(alert)),
+    );
+    activeAlertCount.textContent = activeAlerts.length === 1
+        ? "1 problemă"
+        : `${activeAlerts.length} probleme`;
+    activeAlertEmpty.hidden = activeAlerts.length !== 0;
+    alertHistoryEmpty.hidden = history.length !== 0;
+}
+
+async function loadAlerts() {
+    if (alertsRefreshInProgress) {
+        return;
+    }
+
+    alertsRefreshInProgress = true;
+
+    try {
+        const response = await fetch("/api/system/alerts?limit=100", {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+        });
+        renderAlerts(await readJsonResponse(response));
+    } catch (error) {
+        showAlertsMessage(error.message, true);
+    } finally {
+        alertsRefreshInProgress = false;
+    }
+}
+
+async function saveAlertSettings(event) {
+    event.preventDefault();
+    const button = alertSettingsForm.querySelector("button[type='submit']");
+    button.disabled = true;
+    alertsMessage.hidden = true;
+
+    try {
+        const response = await fetch("/api/system/alerts/settings", {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                enabled: alertsEnabled.checked,
+                alert_server: alertServer.checked,
+                alert_charger: alertCharger.checked,
+                alert_battery: alertBattery.checked,
+                alert_thermal: alertThermal.checked,
+                alert_storage: alertStorage.checked,
+                alert_services: alertServices.checked,
+                battery_low_percent: Number(alertBatteryThreshold.value),
+                storage_warning_percent: Number(alertStorageThreshold.value),
+                thermal_warning_c: Number(alertThermalThreshold.value),
+                cooldown_minutes: Number(alertCooldown.value),
+            }),
+        });
+        const payload = await readJsonResponse(response);
+        renderAlertSettings(payload.settings);
+        showAlertsMessage(payload.message);
+    } catch (error) {
+        showAlertsMessage(error.message, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function runAlertCheck() {
+    checkAlertsButton.disabled = true;
+    checkAlertsButton.textContent = "Se verifică...";
+    alertsMessage.hidden = true;
+
+    try {
+        const response = await fetch("/api/system/alerts/check", {
+            method: "POST",
+            headers: { Accept: "application/json" },
+        });
+        const payload = await readJsonResponse(response);
+        showAlertsMessage(
+            `Verificare completă: ${payload.active_alerts.length} probleme active.`,
+        );
+        await loadAlerts();
+    } catch (error) {
+        showAlertsMessage(error.message, true);
+    } finally {
+        checkAlertsButton.disabled = false;
+        checkAlertsButton.textContent = "Verifică acum";
+    }
+}
+
+async function sendTestAlert() {
+    testAlertButton.disabled = true;
+    alertsMessage.hidden = true;
+
+    try {
+        const response = await fetch("/api/system/alerts/test", {
+            method: "POST",
+            headers: { Accept: "application/json" },
+        });
+        await readJsonResponse(response);
+        showAlertsMessage("Alerta de test a fost creată.");
+        await loadAlerts();
+    } catch (error) {
+        showAlertsMessage(error.message, true);
+    } finally {
+        testAlertButton.disabled = false;
+    }
+}
+
 refreshButton.addEventListener("click", loadSystemStatus);
 refreshBackupsButton.addEventListener("click", loadBackups);
 refreshResourcesButton.addEventListener("click", loadResources);
@@ -1125,6 +1329,9 @@ processSort.addEventListener("change", renderProcesses);
 thermalPolicyForm.addEventListener("submit", saveThermalPolicy);
 applyChargeLimitButton.addEventListener("click", applyChargeLimit);
 historyHours.addEventListener("change", loadPowerCenter);
+alertSettingsForm.addEventListener("submit", saveAlertSettings);
+checkAlertsButton.addEventListener("click", runAlertCheck);
+testAlertButton.addEventListener("click", sendTestAlert);
 
 refreshTimer = window.setInterval(() => {
     if (document.visibilityState === "visible") {
@@ -1154,3 +1361,4 @@ loadSystemStatus();
 loadBackups();
 loadResources();
 loadPowerCenter();
+loadAlerts();

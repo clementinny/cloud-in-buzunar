@@ -78,6 +78,32 @@ class HttpsScriptTest(unittest.TestCase):
         self.assertIn("--access-logformat '%(h)s %(s)s %(L)s'", manager)
         self.assertNotIn("--access-logformat '%(r)s", manager)
 
+    def test_https_health_check_connects_directly_to_loopback(self):
+        manager = (PROJECT_DIR / "scripts" / "cloud-https.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("--noproxy '*'", manager)
+        self.assertIn(
+            '--connect-to "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1:$HTTPS_PORT"',
+            manager,
+        )
+        self.assertNotIn('--resolve "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1"', manager)
+        status_block = manager.split("status_proxy()", 1)[1].split(
+            'case "${1:-}"', 1
+        )[0]
+        self.assertLess(
+            status_block.index("if proxy_responds"),
+            status_block.index('if process_id="$(running_pid)"'),
+        )
+        start_block = manager.split("start_proxy()", 1)[1].split(
+            "stop_proxy()", 1
+        )[0]
+        self.assertIn(
+            "Caddy rulează (PID %s), dar HTTPS nu răspunde; se repornește.",
+            start_block,
+        )
+        self.assertIn("stop_proxy", start_block)
+
 
 if __name__ == "__main__":
     unittest.main()

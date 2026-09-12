@@ -27,15 +27,26 @@ load_proxy_config() {
 
 running_pid() {
     local process_id
+    local command_line
     process_id="$(cat "$PID_FILE" 2>/dev/null || true)"
 
-    if [ -n "$process_id" ] \
-        && kill -0 "$process_id" 2>/dev/null \
-        && tr '\0' ' ' < "/proc/$process_id/cmdline" 2>/dev/null \
-            | grep -Fq "caddy run --config $CADDYFILE"; then
-        printf '%s\n' "$process_id"
-        return 0
-    fi
+    case "$process_id" in
+        ''|*[!0-9]*)
+            return 1
+            ;;
+    esac
+
+    kill -0 "$process_id" 2>/dev/null || return 1
+    command_line="$(
+        tr '\0' ' ' < "/proc/$process_id/cmdline" 2>/dev/null || true
+    )"
+
+    case "$command_line" in
+        *caddy*run*"$CADDYFILE"*)
+            printf '%s\n' "$process_id"
+            return 0
+            ;;
+    esac
 
     return 1
 }
@@ -47,9 +58,10 @@ proxy_responds() {
         --silent \
         --fail \
         --insecure \
+        --noproxy '*' \
         --max-time 5 \
         --output /dev/null \
-        --resolve "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1" \
+        --connect-to "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1:$HTTPS_PORT" \
         "https://$HTTPS_HOST:$HTTPS_PORT/api/health"
 }
 
@@ -61,9 +73,16 @@ start_proxy() {
     [ -r "$CADDYFILE" ] || die "lipsește configurația Caddy."
 
     local process_id
-    if process_id="$(running_pid)"; then
-        printf 'Proxy-ul HTTPS rulează deja (PID %s).\n' "$process_id"
+    if proxy_responds; then
+        printf 'Proxy-ul HTTPS răspunde deja: https://%s:%s\n' \
+            "$HTTPS_HOST" "$HTTPS_PORT"
         return 0
+    fi
+
+    if process_id="$(running_pid)"; then
+        printf 'Caddy rulează (PID %s), dar HTTPS nu răspunde; se repornește.\n' \
+            "$process_id"
+        stop_proxy
     fi
 
     mkdir -p "$DATA_DIR/runtime" "$DATA_DIR/logs" "$CADDY_DIR/data" "$CADDY_DIR/config"
@@ -129,12 +148,20 @@ stop_proxy() {
 status_proxy() {
     load_proxy_config
     local process_id
-    if process_id="$(running_pid)"; then
-        if proxy_responds; then
+
+    if proxy_responds; then
+        process_id="$(running_pid || true)"
+        if [ -n "$process_id" ]; then
             printf 'HTTPS online: https://%s:%s (PID %s)\n' \
                 "$HTTPS_HOST" "$HTTPS_PORT" "$process_id"
-            return 0
+        else
+            printf 'HTTPS online: https://%s:%s\n' \
+                "$HTTPS_HOST" "$HTTPS_PORT"
         fi
+        return 0
+    fi
+
+    if process_id="$(running_pid)"; then
         printf 'Caddy rulează (PID %s), dar aplicația nu răspunde prin HTTPS.\n' \
             "$process_id"
         return 1

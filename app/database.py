@@ -328,6 +328,81 @@ CREATE INDEX IF NOT EXISTS file_shares_owner
 ON file_shares (owner_user_id, created_at DESC)
 """
 
+SYSTEM_ALERT_SETTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS system_alert_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    alert_server INTEGER NOT NULL DEFAULT 1
+        CHECK (alert_server IN (0, 1)),
+    alert_charger INTEGER NOT NULL DEFAULT 1
+        CHECK (alert_charger IN (0, 1)),
+    alert_battery INTEGER NOT NULL DEFAULT 1
+        CHECK (alert_battery IN (0, 1)),
+    alert_thermal INTEGER NOT NULL DEFAULT 1
+        CHECK (alert_thermal IN (0, 1)),
+    alert_storage INTEGER NOT NULL DEFAULT 1
+        CHECK (alert_storage IN (0, 1)),
+    alert_services INTEGER NOT NULL DEFAULT 1
+        CHECK (alert_services IN (0, 1)),
+    battery_low_percent INTEGER NOT NULL DEFAULT 25
+        CHECK (battery_low_percent BETWEEN 5 AND 80),
+    storage_warning_percent INTEGER NOT NULL DEFAULT 90
+        CHECK (storage_warning_percent BETWEEN 50 AND 99),
+    thermal_warning_c REAL NOT NULL DEFAULT 42
+        CHECK (thermal_warning_c BETWEEN 30 AND 60),
+    cooldown_minutes INTEGER NOT NULL DEFAULT 60
+        CHECK (cooldown_minutes BETWEEN 5 AND 1440),
+    updated_at TEXT NOT NULL
+)
+"""
+
+SYSTEM_ALERT_EVENT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS system_alert_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_key TEXT NOT NULL,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('warning', 'critical', 'info')),
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    event_type TEXT NOT NULL
+        CHECK (event_type IN ('triggered', 'repeated', 'resolved', 'test')),
+    created_at TEXT NOT NULL
+)
+"""
+
+SYSTEM_ALERT_EVENT_INDEX = """
+CREATE INDEX IF NOT EXISTS system_alert_events_timeline
+ON system_alert_events (created_at DESC, id DESC)
+"""
+
+SYSTEM_ALERT_STATE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS system_alert_states (
+    alert_key TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('warning', 'critical')),
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    last_alerted_at TEXT NOT NULL,
+    resolved_at TEXT
+)
+"""
+
+SYSTEM_ALERT_DELIVERY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS system_alert_deliveries (
+    device_id INTEGER NOT NULL,
+    event_id INTEGER NOT NULL,
+    acknowledged_at TEXT NOT NULL,
+    PRIMARY KEY (device_id, event_id),
+    FOREIGN KEY (device_id)
+        REFERENCES monitor_devices(id) ON DELETE CASCADE,
+    FOREIGN KEY (event_id)
+        REFERENCES system_alert_events(id) ON DELETE CASCADE
+)
+"""
+
 
 def open_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -520,6 +595,21 @@ def initialize_database():
         connection.execute(FILE_SHARE_SCHEMA)
         connection.execute(FILE_SHARE_TOKEN_INDEX)
         connection.execute(FILE_SHARE_OWNER_INDEX)
+        connection.execute(SYSTEM_ALERT_SETTINGS_SCHEMA)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO system_alert_settings (
+                id,
+                updated_at
+            )
+            VALUES (1, ?)
+            """,
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        connection.execute(SYSTEM_ALERT_EVENT_SCHEMA)
+        connection.execute(SYSTEM_ALERT_EVENT_INDEX)
+        connection.execute(SYSTEM_ALERT_STATE_SCHEMA)
+        connection.execute(SYSTEM_ALERT_DELIVERY_SCHEMA)
         connection.commit()
     finally:
         connection.close()
@@ -996,6 +1086,388 @@ def prune_system_metrics(keep_hours=168):
     try:
         cursor = connection.execute(
             "DELETE FROM system_metrics WHERE recorded_at < ?",
+            (cutoff.isoformat(),),
+        )
+        connection.commit()
+        return cursor.rowcount
+    finally:
+        connection.close()
+
+
+def get_system_alert_settings():
+    connection = open_database()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                enabled,
+                alert_server,
+                alert_charger,
+                alert_battery,
+                alert_thermal,
+                alert_storage,
+                alert_services,
+                battery_low_percent,
+                storage_warning_percent,
+                thermal_warning_c,
+                cooldown_minutes,
+                updated_at
+            FROM system_alert_settings
+            WHERE id = 1
+            """
+        ).fetchone()
+
+        if row is None:
+            raise RuntimeError("System alert settings are not initialized")
+
+        result = dict(row)
+
+        for field in (
+            "enabled",
+            "alert_server",
+            "alert_charger",
+            "alert_battery",
+            "alert_thermal",
+            "alert_storage",
+            "alert_services",
+        ):
+            result[field] = bool(result[field])
+
+        return result
+    finally:
+        connection.close()
+
+
+def update_system_alert_settings(settings):
+    updated_at = datetime.now(timezone.utc).isoformat()
+    connection = open_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE system_alert_settings
+            SET
+                enabled = ?,
+                alert_server = ?,
+                alert_charger = ?,
+                alert_battery = ?,
+                alert_thermal = ?,
+                alert_storage = ?,
+                alert_services = ?,
+                battery_low_percent = ?,
+                storage_warning_percent = ?,
+                thermal_warning_c = ?,
+                cooldown_minutes = ?,
+                updated_at = ?
+            WHERE id = 1
+            """,
+            (
+                int(settings["enabled"]),
+                int(settings["alert_server"]),
+                int(settings["alert_charger"]),
+                int(settings["alert_battery"]),
+                int(settings["alert_thermal"]),
+                int(settings["alert_storage"]),
+                int(settings["alert_services"]),
+                settings["battery_low_percent"],
+                settings["storage_warning_percent"],
+                settings["thermal_warning_c"],
+                settings["cooldown_minutes"],
+                updated_at,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    return get_system_alert_settings()
+
+
+def _insert_system_alert_event(connection, condition, event_type, created_at):
+    cursor = connection.execute(
+        """
+        INSERT INTO system_alert_events (
+            alert_key,
+            category,
+            severity,
+            title,
+            message,
+            event_type,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            condition["alert_key"],
+            condition["category"],
+            condition["severity"],
+            condition["title"],
+            condition["message"],
+            event_type,
+            created_at,
+        ),
+    )
+    return cursor.lastrowid
+
+
+def record_system_alert_event(condition, event_type="test", now=None):
+    created_at = (now or datetime.now(timezone.utc)).isoformat()
+    connection = open_database()
+
+    try:
+        event_id = _insert_system_alert_event(
+            connection,
+            condition,
+            event_type,
+            created_at,
+        )
+        connection.commit()
+        return event_id
+    finally:
+        connection.close()
+
+
+def sync_system_alert_conditions(conditions, cooldown_minutes, now=None):
+    current_time = now or datetime.now(timezone.utc)
+    current_iso = current_time.isoformat()
+    cooldown = timedelta(minutes=max(5, int(cooldown_minutes)))
+    current_conditions = {
+        condition["alert_key"]: condition
+        for condition in conditions
+    }
+    generated_events = []
+    connection = open_database()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        active_rows = {
+            row["alert_key"]: row
+            for row in connection.execute(
+                """
+                SELECT *
+                FROM system_alert_states
+                WHERE is_active = 1
+                """
+            ).fetchall()
+        }
+
+        for alert_key, condition in current_conditions.items():
+            previous = active_rows.get(alert_key)
+            event_type = None
+
+            if previous is None:
+                event_type = "triggered"
+                first_seen_at = current_iso
+            else:
+                first_seen_at = previous["first_seen_at"]
+                last_alerted_at = datetime.fromisoformat(
+                    previous["last_alerted_at"]
+                )
+
+                if current_time - last_alerted_at >= cooldown:
+                    event_type = "repeated"
+
+            alerted_at = current_iso if event_type else (
+                previous["last_alerted_at"]
+            )
+            connection.execute(
+                """
+                INSERT INTO system_alert_states (
+                    alert_key,
+                    category,
+                    severity,
+                    title,
+                    message,
+                    is_active,
+                    first_seen_at,
+                    last_seen_at,
+                    last_alerted_at,
+                    resolved_at
+                )
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)
+                ON CONFLICT(alert_key) DO UPDATE SET
+                    category = excluded.category,
+                    severity = excluded.severity,
+                    title = excluded.title,
+                    message = excluded.message,
+                    is_active = 1,
+                    first_seen_at = excluded.first_seen_at,
+                    last_seen_at = excluded.last_seen_at,
+                    last_alerted_at = excluded.last_alerted_at,
+                    resolved_at = NULL
+                """,
+                (
+                    alert_key,
+                    condition["category"],
+                    condition["severity"],
+                    condition["title"],
+                    condition["message"],
+                    first_seen_at,
+                    current_iso,
+                    alerted_at,
+                ),
+            )
+
+            if event_type:
+                event_id = _insert_system_alert_event(
+                    connection,
+                    condition,
+                    event_type,
+                    current_iso,
+                )
+                generated_events.append(
+                    {"id": event_id, "event_type": event_type, **condition}
+                )
+
+        for alert_key, previous in active_rows.items():
+            if alert_key in current_conditions:
+                continue
+
+            resolved_condition = {
+                "alert_key": alert_key,
+                "category": previous["category"],
+                "severity": "info",
+                "title": f"Rezolvat: {previous['title']}",
+                "message": "Problema nu mai este detectată.",
+            }
+            connection.execute(
+                """
+                UPDATE system_alert_states
+                SET is_active = 0, resolved_at = ?, last_seen_at = ?
+                WHERE alert_key = ?
+                """,
+                (current_iso, current_iso, alert_key),
+            )
+            event_id = _insert_system_alert_event(
+                connection,
+                resolved_condition,
+                "resolved",
+                current_iso,
+            )
+            generated_events.append(
+                {
+                    "id": event_id,
+                    "event_type": "resolved",
+                    **resolved_condition,
+                }
+            )
+
+        connection.commit()
+        return generated_events
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def list_system_alert_events(limit=100, device_id=None):
+    limit = min(500, max(1, int(limit)))
+    connection = open_database()
+
+    try:
+        parameters = []
+        delivery_filter = ""
+
+        if device_id is not None:
+            delivery_filter = """
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM system_alert_deliveries
+                    WHERE system_alert_deliveries.device_id = ?
+                      AND system_alert_deliveries.event_id = system_alert_events.id
+                )
+            """
+            parameters.append(int(device_id))
+
+        parameters.append(limit)
+        rows = connection.execute(
+            f"""
+            SELECT
+                id,
+                alert_key,
+                category,
+                severity,
+                title,
+                message,
+                event_type,
+                created_at
+            FROM system_alert_events
+            {delivery_filter}
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            parameters,
+        ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+    finally:
+        connection.close()
+
+
+def list_active_system_alerts():
+    connection = open_database()
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT
+                alert_key,
+                category,
+                severity,
+                title,
+                message,
+                first_seen_at,
+                last_seen_at,
+                last_alerted_at
+            FROM system_alert_states
+            WHERE is_active = 1
+            ORDER BY first_seen_at DESC
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def acknowledge_system_alert_events(device_id, event_ids):
+    acknowledged_at = datetime.now(timezone.utc).isoformat()
+    unique_ids = sorted({int(event_id) for event_id in event_ids})
+    connection = open_database()
+
+    try:
+        before = connection.total_changes
+
+        for event_id in unique_ids:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO system_alert_deliveries (
+                    device_id,
+                    event_id,
+                    acknowledged_at
+                )
+                SELECT ?, id, ?
+                FROM system_alert_events
+                WHERE id = ?
+                """,
+                (device_id, acknowledged_at, event_id),
+            )
+
+        connection.commit()
+        return connection.total_changes - before
+    finally:
+        connection.close()
+
+
+def prune_system_alert_events(keep_days=30):
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        days=max(7, int(keep_days))
+    )
+    connection = open_database()
+
+    try:
+        cursor = connection.execute(
+            "DELETE FROM system_alert_events WHERE created_at < ?",
             (cutoff.isoformat(),),
         )
         connection.commit()

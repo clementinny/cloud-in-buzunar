@@ -11,6 +11,7 @@ from app.messaging import messaging_blueprint
 from app.system_status import system_status_blueprint
 from app.backup_admin import backup_admin_blueprint
 from app.share_links import share_links_blueprint
+from app.reliability_alerts import reliability_alerts_blueprint
 from flask import (
     Flask,
     jsonify,
@@ -86,6 +87,7 @@ app.register_blueprint(messaging_blueprint)
 app.register_blueprint(system_status_blueprint)
 app.register_blueprint(backup_admin_blueprint)
 app.register_blueprint(share_links_blueprint)
+app.register_blueprint(reliability_alerts_blueprint)
 
 def calculate_sha256(path: Path) -> str:
     digest = hashlib.sha256()

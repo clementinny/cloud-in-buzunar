@@ -4,16 +4,21 @@ set -u
 
 PROJECT_DIR="${CLOUD_PROJECT_DIR:-$HOME/projects/cloud-in-buzunar}"
 DATA_DIR="${CLOUD_DATA_DIR:-$HOME/cloud-in-buzunar-data}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$SCRIPT_DIR/$(basename -- "${BASH_SOURCE[0]}")"
 LOG_DIR="$DATA_DIR/logs"
 RUNTIME_DIR="$DATA_DIR/runtime"
 CONFIG_FILE="$DATA_DIR/autostart.conf"
 PYTHON="$PROJECT_DIR/.venv/bin/python"
 GUNICORN="$PROJECT_DIR/.venv/bin/gunicorn"
 WATCHDOG_PID_FILE="$RUNTIME_DIR/cloud-watchdog.pid"
+WATCHDOG_HEARTBEAT_FILE="$RUNTIME_DIR/cloud-watchdog-heartbeat"
+WATCHDOG_SAMPLE_FILE="$RUNTIME_DIR/cloud-watchdog-last-sample"
 SERVICE_LOG="$LOG_DIR/cloud-services.log"
 WATCHDOG_LOG="$LOG_DIR/cloud-watchdog.log"
 BACKUP_LOG="$LOG_DIR/backup.log"
 THERMAL_LOG="$LOG_DIR/thermal-guardian.log"
+ALERT_LOG="$LOG_DIR/reliability-alerts.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
 
@@ -27,6 +32,8 @@ BACKUP_ENABLED=true
 BACKUP_KEEP=3
 BACKUP_INTERVAL_HOURS=24
 WATCHDOG_INTERVAL_SECONDS=60
+THERMAL_CHECK_TIMEOUT_SECONDS=45
+ALERT_CHECK_INTERVAL_SECONDS=120
 
 mkdir -p "$LOG_DIR" "$RUNTIME_DIR"
 
@@ -112,12 +119,96 @@ thermal_service_is_suspended() {
 
 
 run_thermal_guardian_check() {
-    [ -x "$PYTHON" ] || return 0
+    if [ ! -x "$PYTHON" ]; then
+        log_message ERROR "Python din mediul virtual lipsește; istoricul nu poate fi colectat."
+        return 1
+    fi
+
     cd "$PROJECT_DIR" || return 1
 
-    "$PYTHON" -m app.thermal_guardian check \
-        >> "$THERMAL_LOG" 2>&1 || \
-        log_message WARN "Verificarea termică a eșuat."
+    local -a command=("$PYTHON" -m app.thermal_guardian check)
+
+    if command_exists timeout; then
+        command=(timeout "${THERMAL_CHECK_TIMEOUT_SECONDS:-45}" "${command[@]}")
+    fi
+
+    if "${command[@]}" >> "$THERMAL_LOG" 2>&1; then
+        printf '%s\n' "$(date +%s)" > "$WATCHDOG_SAMPLE_FILE"
+        chmod 600 "$WATCHDOG_SAMPLE_FILE"
+        return 0
+    fi
+
+    log_message WARN \
+        "Verificarea termică și salvarea istoricului au eșuat; vezi $THERMAL_LOG."
+    return 1
+}
+
+
+run_reliability_alert_check() {
+    if [ ! -x "$PYTHON" ]; then
+        log_message ERROR "Python din mediul virtual lipsește; alertele nu pot fi evaluate."
+        return 1
+    fi
+
+    cd "$PROJECT_DIR" || return 1
+
+    local -a command=("$PYTHON" -m app.reliability_alerts check)
+
+    if command_exists timeout; then
+        command=(timeout 90 "${command[@]}")
+    fi
+
+    if "${command[@]}" >> "$ALERT_LOG" 2>&1; then
+        return 0
+    fi
+
+    log_message WARN "Evaluarea alertelor a eșuat; vezi $ALERT_LOG."
+    return 1
+}
+
+
+validated_watchdog_interval() {
+    local configured="${WATCHDOG_INTERVAL_SECONDS:-60}"
+
+    case "$configured" in
+        ''|*[!0-9]*)
+            printf '60\n'
+            return
+            ;;
+    esac
+
+    if [ "$configured" -lt 15 ] || [ "$configured" -gt 3600 ]; then
+        printf '60\n'
+    else
+        printf '%s\n' "$configured"
+    fi
+}
+
+
+validated_alert_interval() {
+    local configured="${ALERT_CHECK_INTERVAL_SECONDS:-120}"
+
+    case "$configured" in
+        ''|*[!0-9]*)
+            printf '120\n'
+            return
+            ;;
+    esac
+
+    if [ "$configured" -lt 30 ] || [ "$configured" -gt 3600 ]; then
+        printf '120\n'
+    else
+        printf '%s\n' "$configured"
+    fi
+}
+
+
+write_watchdog_heartbeat() {
+    local temporary_file="$WATCHDOG_HEARTBEAT_FILE.$$"
+
+    printf '%s\n' "$(date +%s)" > "$temporary_file"
+    chmod 600 "$temporary_file"
+    mv -f "$temporary_file" "$WATCHDOG_HEARTBEAT_FILE"
 }
 
 
@@ -496,38 +587,104 @@ start_backup_if_due() {
 
 watchdog_is_running() {
     local process_id
+    local command_line
     process_id="$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)"
 
-    [ -n "$process_id" ] \
-        && kill -0 "$process_id" 2>/dev/null \
-        && tr '\0' ' ' < "/proc/$process_id/cmdline" 2>/dev/null \
-            | grep -q 'cloud-services.sh watchdog'
+    case "$process_id" in
+        ''|*[!0-9]*)
+            return 1
+            ;;
+    esac
+
+    kill -0 "$process_id" 2>/dev/null || return 1
+    command_line="$(
+        tr '\0' ' ' < "/proc/$process_id/cmdline" 2>/dev/null || true
+    )"
+
+    printf '%s\n' "$command_line" \
+        | grep -Eq '(^|[ /])cloud-services\.sh watchdog([ ]|$)'
 }
 
 
 start_watchdog() {
+    local attempt
+
     if watchdog_is_running; then
         return 0
     fi
 
-    rm -f "$WATCHDOG_PID_FILE"
-    nohup "$0" watchdog >> "$WATCHDOG_LOG" 2>&1 &
-    sleep 1
+    rm -f "$WATCHDOG_PID_FILE" "$WATCHDOG_HEARTBEAT_FILE"
 
-    if watchdog_is_running; then
-        log_message INFO "Watchdog-ul a fost pornit."
-        return 0
+    if [ ! -x "$PYTHON" ]; then
+        log_message ERROR "Watchdog-ul nu poate porni: mediul virtual lipsește."
+        return 1
     fi
+
+    cd "$PROJECT_DIR" || return 1
+
+    if ! "$PYTHON" -c \
+        'from app.database import initialize_database; initialize_database()' \
+        >> "$WATCHDOG_LOG" 2>&1; then
+        log_message ERROR \
+            "Watchdog-ul nu poate porni: baza de date nu a fost inițializată."
+        return 1
+    fi
+
+    nohup "${BASH:-/data/data/com.termux/files/usr/bin/bash}" \
+        "$SCRIPT_PATH" watchdog \
+        </dev/null >> "$WATCHDOG_LOG" 2>&1 &
+
+    for attempt in 1 2 3 4 5; do
+        if watchdog_is_running; then
+            log_message INFO "Watchdog-ul a fost pornit."
+            return 0
+        fi
+
+        sleep 1
+    done
 
     log_message ERROR "Watchdog-ul nu a putut fi pornit."
     return 1
 }
 
 
+stop_watchdog() {
+    local process_id
+    local attempt
+    process_id="$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)"
+
+    if ! watchdog_is_running; then
+        rm -f "$WATCHDOG_PID_FILE" "$WATCHDOG_HEARTBEAT_FILE"
+        log_message INFO "Watchdog-ul este deja oprit."
+        return 0
+    fi
+
+    kill "$process_id" 2>/dev/null || true
+
+    for attempt in 1 2 3 4 5; do
+        if ! kill -0 "$process_id" 2>/dev/null; then
+            rm -f "$WATCHDOG_PID_FILE" "$WATCHDOG_HEARTBEAT_FILE"
+            log_message INFO "Watchdog-ul a fost oprit intenționat."
+            return 0
+        fi
+
+        sleep 1
+    done
+
+    log_message ERROR "Watchdog-ul nu s-a oprit în timpul alocat."
+    return 1
+}
+
+
 run_watchdog() {
+    if watchdog_is_running && [ "$(cat "$WATCHDOG_PID_FILE")" != "$$" ]; then
+        log_message INFO "Există deja un watchdog activ; instanța duplicată se oprește."
+        return 0
+    fi
+
     printf '%s\n' "$$" > "$WATCHDOG_PID_FILE"
     chmod 600 "$WATCHDOG_PID_FILE"
-    trap 'rm -f "$WATCHDOG_PID_FILE"' EXIT INT TERM
+    trap 'rm -f "$WATCHDOG_PID_FILE" "$WATCHDOG_HEARTBEAT_FILE"' EXIT INT TERM
 
     local web_failures=0
     local aria_failures=0
@@ -535,12 +692,24 @@ run_watchdog() {
     local ai_failures=0
     local https_failures=0
     local last_backup_check=0
+    local last_alert_check=0
     local current_time
+    local watchdog_interval
+    local alert_interval
 
     log_message INFO "Watchdog-ul monitorizează serviciile."
 
     while true; do
         load_config
+        watchdog_interval="$(validated_watchdog_interval)"
+        alert_interval="$(validated_alert_interval)"
+
+        if [ "${WATCHDOG_INTERVAL_SECONDS:-60}" != "$watchdog_interval" ]; then
+            log_message WARN \
+                "WATCHDOG_INTERVAL_SECONDS este invalid; se folosește 60 secunde."
+        fi
+
+        write_watchdog_heartbeat
 
         if [ "$START_SSHD" = true ] \
             && ! process_matches '(^|/)sshd( |$)'; then
@@ -627,12 +796,17 @@ run_watchdog() {
 
         current_time="$(date +%s)"
 
+        if [ $((current_time - last_alert_check)) -ge "$alert_interval" ]; then
+            run_reliability_alert_check || true
+            last_alert_check="$current_time"
+        fi
+
         if [ $((current_time - last_backup_check)) -ge 3600 ]; then
             start_backup_if_due
             last_backup_check="$current_time"
         fi
 
-        sleep "$WATCHDOG_INTERVAL_SECONDS"
+        sleep "$watchdog_interval"
     done
 }
 
@@ -653,6 +827,14 @@ print_service_status() {
         "$(https_is_healthy && echo online || echo offline)"
     printf '  Watchdog:     %s\n' \
         "$(watchdog_is_running && echo online || echo offline)"
+    if [ -r "$WATCHDOG_HEARTBEAT_FILE" ]; then
+        printf '  Ultimul eșantion watchdog: %s\n' \
+            "$(date -d "@$(cat "$WATCHDOG_HEARTBEAT_FILE")" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo necunoscut)"
+    fi
+    if [ -r "$WATCHDOG_SAMPLE_FILE" ]; then
+        printf '  Ultimul istoric salvat: %s\n' \
+            "$(date -d "@$(cat "$WATCHDOG_SAMPLE_FILE")" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo necunoscut)"
+    fi
     printf '  Protecție termică: %s\n' \
         "$($PYTHON -m app.thermal_guardian status 2>/dev/null || echo indisponibil)"
     printf '  AI la boot:   %s\n' "$START_AI"
@@ -672,6 +854,23 @@ case "${1:-}" in
         ;;
     watchdog)
         run_watchdog
+        ;;
+    watchdog-start)
+        start_watchdog
+        ;;
+    watchdog-stop)
+        stop_watchdog
+        ;;
+    watchdog-restart)
+        stop_watchdog || true
+        start_watchdog
+        ;;
+    watchdog-sample)
+        if run_thermal_guardian_check; then
+            log_message INFO "Eșantionul CPU/temperatură a fost salvat."
+        else
+            exit 1
+        fi
         ;;
     status)
         print_service_status
@@ -706,7 +905,7 @@ case "${1:-}" in
         ;;
     *)
         printf '%s\n' \
-            "Utilizare: $0 {start|boot|watchdog|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop}"
+            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop}"
         exit 1
         ;;
 esac

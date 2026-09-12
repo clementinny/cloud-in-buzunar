@@ -16,12 +16,12 @@
     >
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='css/status.css') }}?v=6"
+        href="{{ url_for('static', filename='css/status.css') }}?v=7"
     >
 
     <script
         defer
-        src="{{ url_for('static', filename='js/status.js') }}?v=6"
+        src="{{ url_for('static', filename='js/status.js') }}?v=7"
     ></script>
 </head>
 
@@ -251,6 +251,92 @@
             <p id="history-empty" class="backup-list-empty" hidden>
                 Istoricul va apărea după prima verificare a guardianului.
             </p>
+        </section>
+
+        <section class="alerts-panel">
+            <div class="alerts-heading">
+                <div>
+                    <p class="status-section-label">Reliability Center</p>
+                    <h2>Alerte și notificări</h2>
+                    <p>
+                        Detectează problemele o singură dată, apoi repetă
+                        alerta numai după perioada de pauză aleasă.
+                    </p>
+                </div>
+                <div class="alerts-actions">
+                    <button id="check-alerts-button" type="button">
+                        Verifică acum
+                    </button>
+                    <button id="test-alert-button" type="button">
+                        Trimite test
+                    </button>
+                </div>
+            </div>
+
+            <p id="alerts-message" role="status" hidden></p>
+
+            <form id="alert-settings-form" class="alert-settings-form">
+                <label class="toggle-row alert-master-toggle">
+                    <input id="alerts-enabled" type="checkbox">
+                    <span>Alerte automate active</span>
+                </label>
+
+                <div class="alert-toggle-grid">
+                    <label class="toggle-row"><input id="alert-server" type="checkbox"><span>Server și baza de date</span></label>
+                    <label class="toggle-row"><input id="alert-charger" type="checkbox"><span>Încărcător deconectat</span></label>
+                    <label class="toggle-row"><input id="alert-battery" type="checkbox"><span>Baterie descărcată</span></label>
+                    <label class="toggle-row"><input id="alert-thermal" type="checkbox"><span>Temperatură ridicată</span></label>
+                    <label class="toggle-row"><input id="alert-storage" type="checkbox"><span>Stocare aproape plină</span></label>
+                    <label class="toggle-row"><input id="alert-services" type="checkbox"><span>Servicii gestionate</span></label>
+                </div>
+
+                <div class="alert-threshold-grid">
+                    <label>
+                        Baterie sub
+                        <span><input id="alert-battery-threshold" type="number" min="5" max="80" step="1"> %</span>
+                    </label>
+                    <label>
+                        Stocare peste
+                        <span><input id="alert-storage-threshold" type="number" min="50" max="99" step="1"> %</span>
+                    </label>
+                    <label>
+                        Temperatură peste
+                        <span><input id="alert-thermal-threshold" type="number" min="30" max="60" step="0.5"> °C</span>
+                    </label>
+                    <label>
+                        Repetă după
+                        <select id="alert-cooldown">
+                            <option value="15">15 minute</option>
+                            <option value="30">30 minute</option>
+                            <option value="60">1 oră</option>
+                            <option value="180">3 ore</option>
+                            <option value="360">6 ore</option>
+                            <option value="1440">24 ore</option>
+                        </select>
+                    </label>
+                </div>
+
+                <button type="submit">Salvează alertele</button>
+            </form>
+
+            <div>
+                <div class="alert-list-heading">
+                    <h3>Alerte active</h3>
+                    <span id="active-alert-count">—</span>
+                </div>
+                <div id="active-alert-list" class="alert-list"></div>
+                <p id="active-alert-empty" class="backup-list-empty" hidden>
+                    Nu există probleme active.
+                </p>
+            </div>
+
+            <details class="alert-history-card" open>
+                <summary>Istoricul alertelor</summary>
+                <div id="alert-history-list" class="alert-list"></div>
+                <p id="alert-history-empty" class="backup-list-empty" hidden>
+                    Nicio alertă nu a fost înregistrată încă.
+                </p>
+            </details>
         </section>
 
         <section

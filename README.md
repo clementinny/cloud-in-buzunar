@@ -452,6 +452,34 @@ tail -n 50 "$HOME/cloud-in-buzunar-data/logs/cloud-watchdog.log"
 tail -n 50 "$HOME/cloud-in-buzunar-data/logs/thermal-guardian.log"
 ```
 
+If the dashboard reports that the watchdog is offline after an update, start
+it explicitly and save one immediate CPU/temperature sample with:
+
+```bash
+scripts/cloud-services.sh watchdog-restart
+scripts/cloud-services.sh watchdog-sample
+scripts/cloud-services.sh status
+```
+
+The history charts begin to fill after the first successful sample. Use
+`watchdog-stop`, `watchdog-start` or `watchdog-restart` for maintenance. The
+configured interval is constrained to 15–3600 seconds; an invalid value falls
+back to 60 seconds so a bad configuration cannot create a CPU-intensive loop.
+
+The watchdog also evaluates reliability alerts every two minutes. An
+administrator can enable or disable alerts for the server, charger, battery,
+temperature, storage and managed services from the status dashboard, adjust
+their thresholds and cooldown, inspect their history, or create a test alert.
+Repeated checks update one active incident instead of creating notification
+spam.
+
+The Android companion version 1.0.8 can monitor this server independently and
+notify on consecutive connection failures, recovery and backend alert events.
+Install it on a second phone for true server-down detection, pair it with an
+administrator-generated code, enter the complete server URL, and exempt it
+from aggressive battery optimization. When using Caddy's internal CA, install
+that CA on the companion phone as a trusted user certificate.
+
 Settings are stored in `~/cloud-in-buzunar-data/autostart.conf`. Disable
 battery optimization for both Termux and Termux:Boot. Android may still
 require the Monitor companion to be opened and armed after a reboot; the
@@ -487,15 +515,15 @@ This includes:
 - Backup contents and checksums are validated before restoration
 - The application is intended for a trusted private network
 
-Before exposing the service to the public internet, HTTPS, a properly
-configured reverse proxy and additional security review are required.
+The included Caddy configuration provides supervised HTTPS for trusted LAN or
+VPN use. Public internet exposure still requires a public domain, carefully
+scoped firewall/router rules and an additional security review.
 
 ## Roadmap
 
-- HTTPS and reverse-proxy support
-- Expiring public file-sharing links
-- Automated tests and continuous integration
-- Improved installation and recovery tooling
+- Router-level DNS filtering after deployment on the permanent home network
+- Additional recovery drills and alert delivery tests on physical phones
+- Optional password-vault and offline-knowledge services after resource review
 
 ## Development status
 
