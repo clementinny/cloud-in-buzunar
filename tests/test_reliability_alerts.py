@@ -284,7 +284,7 @@ class ReliabilityAlertTest(unittest.TestCase):
         self.assertEqual(response.get_json()["category"], "device")
         self.assertEqual(
             self.database.list_system_alert_events()[0]["event_type"],
-            "movement",
+            "triggered",
         )
 
     def test_movement_event_requires_valid_device_and_score(self):

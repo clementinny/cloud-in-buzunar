@@ -494,7 +494,7 @@ def system_alert_device_event_api():
         "Telefonul monitor a fost mișcat",
         f"{device['device_name']} a detectat mutarea de pe poziția stabilă.",
     )
-    event_id = record_system_alert_event(condition, event_type="movement")
+    event_id = record_system_alert_event(condition, event_type="triggered")
     return jsonify({"id": event_id, **condition}), 201
 
 
