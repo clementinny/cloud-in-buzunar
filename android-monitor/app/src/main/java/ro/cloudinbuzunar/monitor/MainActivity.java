@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -40,6 +41,7 @@ public final class MainActivity extends Activity {
     private Button disarmButton;
     private Button serverWatchStartButton;
     private Button serverWatchStopButton;
+    private Button openServerButton;
     private Spinner cameraFacingSpinner;
     private CheckBox motionAlertEnabled;
     private Spinner serverPollIntervalSpinner;
@@ -99,6 +101,7 @@ public final class MainActivity extends Activity {
         serverWatchStopButton = findViewById(
             R.id.serverWatchStopButton
         );
+        openServerButton = findViewById(R.id.openServerButton);
         cameraFacingSpinner = findViewById(R.id.cameraFacingSpinner);
         motionAlertEnabled = findViewById(R.id.motionAlertEnabled);
         serverPollIntervalSpinner = findViewById(
@@ -143,6 +146,7 @@ public final class MainActivity extends Activity {
         serverWatchStopButton.setOnClickListener(
             view -> stopServerWatch()
         );
+        openServerButton.setOnClickListener(view -> openServerInBrowser());
 
         showPairingState();
     }
@@ -447,6 +451,34 @@ public final class MainActivity extends Activity {
             "stopped",
             "Monitorizarea serverului este oprită."
         );
+    }
+
+    private void openServerInBrowser() {
+        final String serverUrl;
+
+        try {
+            serverUrl = ApiClient.normalizeServerUrl(
+                serverUrlInput.getText().toString()
+            );
+        } catch (IllegalArgumentException error) {
+            messageText.setText(error.getMessage());
+            return;
+        }
+
+        ServerMonitorSettingsStore.setServerUrl(this, serverUrl);
+        Intent browserIntent = new Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse(serverUrl)
+        );
+
+        if (browserIntent.resolveActivity(getPackageManager()) == null) {
+            messageText.setText(
+                "Nu există un browser disponibil pe acest telefon."
+            );
+            return;
+        }
+
+        startActivity(browserIntent);
     }
 
     private void updateServerWatchState(String state, String message) {
