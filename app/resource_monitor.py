@@ -22,7 +22,7 @@ ANDROID_CPU_PROCESS_PATTERN = re.compile(
     r"^\s*([0-9]+(?:\.[0-9]+)?)%\s+(\d+)/(.+?):\s+"
     r"[0-9]+(?:\.[0-9]+)?%\s+(?:user|usr)\b"
 )
-ROOT_GPU_COMMAND = (
+ROOT_GPU_COMMAND_BODY = (
     "value=$(cat /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null); "
     "[ -n \"$value\" ] && printf 'busy=%s\\n' \"$value\"; "
     "value=$(cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null); "
@@ -33,8 +33,9 @@ ROOT_GPU_COMMAND = (
     "[ -n \"$value\" ] && printf 'maximum=%s\\n' \"$value\"; "
     "value=$(cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null); "
     "[ -n \"$value\" ] && printf 'maximum_devfreq=%s\\n' \"$value\"; "
-    "exit 0"
 )
+ROOT_GPU_COMMAND = ROOT_GPU_COMMAND_BODY + "exit 0"
+ROOT_VALUES_UNSET = object()
 
 try:
     CLOCK_TICKS = int(os.sysconf("SC_CLK_TCK"))
@@ -396,7 +397,7 @@ def read_root_gpu_values():
     return parse_root_gpu_output(result.stdout)
 
 
-def read_gpu_status():
+def read_gpu_status(root_values=ROOT_VALUES_UNSET):
     gpu_busy_path = Path("/sys/class/kgsl/kgsl-3d0/gpubusy")
     current_frequency_paths = [
         Path("/sys/class/kgsl/kgsl-3d0/gpuclk"),
@@ -461,7 +462,10 @@ def read_gpu_status():
         or result["current_frequency_hz"] is None
         or result["maximum_frequency_hz"] is None
     ):
-        root_values = read_root_gpu_values()
+        if root_values is ROOT_VALUES_UNSET:
+            root_values = read_root_gpu_values()
+
+        root_values = root_values or {}
         root_used = False
 
         if result["usage_percent"] is None and "busy" in root_values:
@@ -577,7 +581,14 @@ def get_managed_services(processes):
     ]
 
 
-def collect_resource_usage(sample_seconds=0.3):
+def collect_resource_usage(
+    sample_seconds=0.3,
+    *,
+    include_android_processes=True,
+    root_cpu_samples=None,
+    root_gpu_values=ROOT_VALUES_UNSET,
+    android_cpu_snapshot=ROOT_VALUES_UNSET,
+):
     sample_seconds = min(1.0, max(0.05, float(sample_seconds)))
 
     try:
@@ -585,7 +596,11 @@ def collect_resource_usage(sample_seconds=0.3):
     except (OSError, ValueError, KeyError, IndexError):
         memory = {}
 
-    first_cpu, first_cpu_source = read_cpu_snapshot()
+    if root_cpu_samples is None:
+        first_cpu, first_cpu_source = read_cpu_snapshot()
+    else:
+        first_cpu, second_cpu = root_cpu_samples
+        first_cpu_source = "root" if first_cpu is not None else None
 
     try:
         first_network = read_network_totals()
@@ -598,7 +613,10 @@ def collect_resource_usage(sample_seconds=0.3):
     elapsed_seconds = max(0.001, time.monotonic() - started_at)
     second_processes = read_processes()
 
-    second_cpu, second_cpu_source = read_cpu_snapshot()
+    if root_cpu_samples is None:
+        second_cpu, second_cpu_source = read_cpu_snapshot()
+    else:
+        second_cpu_source = "root" if second_cpu is not None else None
 
     try:
         second_network = read_network_totals()
@@ -744,8 +762,23 @@ def collect_resource_usage(sample_seconds=0.3):
             second_network,
             elapsed_seconds,
         ),
-        "gpu": read_gpu_status(),
-        "android_cpu": read_android_cpu_processes(),
+        "gpu": read_gpu_status(root_values=root_gpu_values),
+        "android_cpu": (
+            android_cpu_snapshot
+            if android_cpu_snapshot is not ROOT_VALUES_UNSET
+            else (
+                read_android_cpu_processes()
+                if include_android_processes
+                else {
+                    "available": False,
+                    "processes": [],
+                    "note": (
+                        "Lista completă Android este colectată numai la "
+                        "actualizarea manuală a panoului."
+                    ),
+                }
+            )
+        ),
         "processes": processes[:50],
         "managed_services": get_managed_services(processes),
         "process_note": (

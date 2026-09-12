@@ -73,8 +73,11 @@ class ThermalGuardianTest(unittest.TestCase):
 
         with (
             patch.object(thermal_guardian, "get_thermal_policy", return_value={**thermal_guardian.DEFAULT_POLICY}),
-            patch.object(thermal_guardian, "collect_resource_usage", return_value=resources),
-            patch.object(thermal_guardian, "collect_power_snapshot", return_value=power),
+            patch.object(
+                thermal_guardian,
+                "collect_background_snapshot",
+                return_value={"resources": resources, "power": power},
+            ),
             patch.object(thermal_guardian, "record_system_metric"),
             patch.object(thermal_guardian, "prune_system_metrics"),
             patch.object(thermal_guardian, "suspend_service", return_value=True) as suspend,

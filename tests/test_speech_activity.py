@@ -37,7 +37,9 @@ class SpeechActivityTest(unittest.TestCase):
         ]
         self.assertIn("highpass=f=120", audio_filter)
         self.assertIn("lowpass=f=3800", audio_filter)
-        self.assertIn("noise=-30dB", audio_filter)
+        self.assertIn("asetpts=PTS-STARTPTS", audio_filter)
+        self.assertIn("aresample=16000:async=1:first_pts=0", audio_filter)
+        self.assertIn("noise=-38dB", audio_filter)
 
     @patch("app.speech_activity.subprocess.run")
     @patch("app.speech_activity.shutil.which", return_value="ffmpeg")
@@ -67,6 +69,28 @@ class SpeechActivityTest(unittest.TestCase):
         self.assertEqual(
             detect_speech_activity("segment.m4a", 600),
             ("complete", []),
+        )
+
+    @patch("app.speech_activity.subprocess.run")
+    @patch("app.speech_activity.shutil.which", return_value="ffmpeg")
+    def test_detects_short_voice_and_ignores_video_stop_noise(
+        self,
+        _which,
+        run,
+    ):
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stderr=(
+                "silence_start: 0\n"
+                "silence_end: 1.8 | silence_duration: 1.8\n"
+                "silence_start: 2.35\n"
+                "silence_end: 11.55 | silence_duration: 9.2\n"
+            ),
+        )
+
+        self.assertEqual(
+            detect_speech_activity("front-camera.mp4", 12),
+            ("complete", [2]),
         )
 
 

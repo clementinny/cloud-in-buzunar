@@ -7,13 +7,12 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.background_monitor import collect_background_snapshot
 from app.database import prune_system_metrics, record_system_metric
 from app.device_power import (
     DevicePowerError,
     apply_charge_limit,
-    collect_power_snapshot,
 )
-from app.resource_monitor import collect_resource_usage
 from app.service_control import PROJECT_DIR, SERVICE_MANAGER
 
 
@@ -319,11 +318,12 @@ def build_history_metric(resources, power, recorded_at):
     }
 
 
-def run_guardian_check():
+def run_guardian_check(evaluate_alerts=False):
     checked_at = datetime.now(timezone.utc).isoformat()
     policy = get_thermal_policy()
-    resources = collect_resource_usage(0.2)
-    power = collect_power_snapshot()
+    snapshot = collect_background_snapshot(0.2)
+    resources = snapshot["resources"]
+    power = snapshot["power"]
     level = determine_thermal_level(policy, power)
     running = {
         service["id"]
@@ -401,6 +401,21 @@ def run_guardian_check():
             "nu sunt modificate."
         )
 
+    alert_result = None
+
+    if evaluate_alerts:
+        try:
+            from app.reliability_alerts import run_reliability_check
+            from app.system_status import collect_system_status
+
+            alert_result = run_reliability_check(
+                status=collect_system_status(),
+                resources=resources,
+                power=power,
+            )
+        except (OSError, sqlite3.Error, ValueError) as error:
+            errors.append(f"Alertele nu au putut fi evaluate: {error}")
+
     state = {
         "checked_at": checked_at,
         "level": level,
@@ -409,7 +424,12 @@ def run_guardian_check():
         "last_error": "; ".join(errors) if errors else None,
     }
     atomic_write_json(STATE_FILE, state)
-    return {**state, "policy": policy, "power": power}
+    return {
+        **state,
+        "policy": policy,
+        "power": power,
+        "alerts": alert_result,
+    }
 
 
 def main():
@@ -420,7 +440,12 @@ def main():
     arguments = parser.parse_args()
 
     if arguments.command == "check":
-        print(json.dumps(run_guardian_check(), ensure_ascii=False))
+        print(
+            json.dumps(
+                run_guardian_check(evaluate_alerts=True),
+                ensure_ascii=False,
+            )
+        )
     else:
         print(json.dumps(get_guardian_status(), ensure_ascii=False))
 

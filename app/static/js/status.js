@@ -32,6 +32,7 @@ const androidProcessListEmpty = document.querySelector(
 const androidProcessNote = document.querySelector("#android-process-note");
 const resourceUpdated = document.querySelector("#resource-updated");
 const powerError = document.querySelector("#power-error");
+const refreshPowerButton = document.querySelector("#refresh-power-button");
 const batteryMetrics = document.querySelector("#battery-metrics");
 const guardianState = document.querySelector(".guardian-state");
 const guardianTitle = document.querySelector("#guardian-title");
@@ -84,11 +85,11 @@ const alertHistoryList = document.querySelector("#alert-history-list");
 const alertHistoryEmpty = document.querySelector("#alert-history-empty");
 
 const refreshIntervalMilliseconds = 10_000;
-const resourceRefreshIntervalMilliseconds = 8_000;
-const powerRefreshIntervalMilliseconds = 60_000;
+// Citirile complete ale proceselor Android necesită root. O actualizare rară
+// evită apelurile `su` și notificările de superuser repetate cât timp pagina
+// rămâne deschisă; butonul „Actualizează” rămâne disponibil oricând.
 let refreshTimer = null;
 let resourceRefreshTimer = null;
-let powerRefreshTimer = null;
 let refreshInProgress = false;
 let backupRefreshInProgress = false;
 let resourceRefreshInProgress = false;
@@ -594,6 +595,8 @@ async function loadPowerCenter() {
     }
 
     powerRefreshInProgress = true;
+    refreshPowerButton.disabled = true;
+    refreshPowerButton.textContent = "Se măsoară...";
     powerError.hidden = true;
 
     try {
@@ -610,6 +613,8 @@ async function loadPowerCenter() {
         powerError.hidden = false;
     } finally {
         powerRefreshInProgress = false;
+        refreshPowerButton.disabled = false;
+        refreshPowerButton.textContent = "Actualizează temperaturile";
     }
 }
 
@@ -1325,6 +1330,7 @@ async function sendTestAlert() {
 refreshButton.addEventListener("click", loadSystemStatus);
 refreshBackupsButton.addEventListener("click", loadBackups);
 refreshResourcesButton.addEventListener("click", loadResources);
+refreshPowerButton.addEventListener("click", loadPowerCenter);
 processSort.addEventListener("change", renderProcesses);
 thermalPolicyForm.addEventListener("submit", saveThermalPolicy);
 applyChargeLimitButton.addEventListener("click", applyChargeLimit);
@@ -1339,22 +1345,9 @@ refreshTimer = window.setInterval(() => {
     }
 }, refreshIntervalMilliseconds);
 
-resourceRefreshTimer = window.setInterval(() => {
-    if (document.visibilityState === "visible") {
-        loadResources();
-    }
-}, resourceRefreshIntervalMilliseconds);
-
-powerRefreshTimer = window.setInterval(() => {
-    if (document.visibilityState === "visible") {
-        loadPowerCenter();
-    }
-}, powerRefreshIntervalMilliseconds);
-
 window.addEventListener("pagehide", () => {
     window.clearInterval(refreshTimer);
     window.clearInterval(resourceRefreshTimer);
-    window.clearInterval(powerRefreshTimer);
 });
 
 loadSystemStatus();

@@ -78,15 +78,12 @@ class HttpsScriptTest(unittest.TestCase):
         self.assertIn("--access-logformat '%(h)s %(s)s %(L)s'", manager)
         self.assertNotIn("--access-logformat '%(r)s", manager)
 
-    def test_https_health_check_connects_directly_to_loopback(self):
+    def test_https_health_check_uses_configured_listener_directly(self):
         manager = (PROJECT_DIR / "scripts" / "cloud-https.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn("--noproxy '*'", manager)
-        self.assertIn(
-            '--connect-to "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1:$HTTPS_PORT"',
-            manager,
-        )
+        self.assertNotIn("--connect-to", manager)
         self.assertNotIn('--resolve "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1"', manager)
         status_block = manager.split("status_proxy()", 1)[1].split(
             'case "${1:-}"', 1

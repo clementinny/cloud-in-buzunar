@@ -45,15 +45,16 @@ class WatchdogScriptTests(unittest.TestCase):
         )
         self.assertIn('> "$WATCHDOG_SAMPLE_FILE"', self.script)
 
-    def test_reliability_alerts_run_periodically_with_a_bounded_interval(self):
+    def test_reliability_alerts_share_the_thermal_snapshot(self):
         self.assertIn(
+            '"$PYTHON" -m app.thermal_guardian check',
+            self.script,
+        )
+        self.assertNotIn(
             '"$PYTHON" -m app.reliability_alerts check',
             self.script,
         )
-        self.assertIn('ALERT_CHECK_INTERVAL_SECONDS=120', self.script)
-        self.assertIn('if [ "$configured" -lt 30 ]', self.script)
-        self.assertIn('[ "$configured" -gt 3600 ]', self.script)
-        self.assertIn('>> "$ALERT_LOG"', self.script)
+        self.assertNotIn("ALERT_CHECK_INTERVAL_SECONDS", self.script)
 
 
 if __name__ == "__main__":

@@ -304,9 +304,22 @@ final class ApiClient {
         String responseText = readStream(stream);
         connection.disconnect();
 
-        JSONObject response = responseText.isEmpty()
-            ? new JSONObject()
-            : new JSONObject(responseText);
+        JSONObject response;
+
+        try {
+            response = responseText.isEmpty()
+                ? new JSONObject()
+                : new JSONObject(responseText);
+        } catch (Exception parsingError) {
+            String message = responseText.contains(
+                "Client sent an HTTP request to an HTTPS server"
+            )
+                ? "Adresa folosește http:// pe portul HTTPS. Schimbă adresa în https://."
+                : "Serverul a răspuns într-un format neașteptat (HTTP "
+                    + status
+                    + "). Verifică adresa serverului.";
+            throw new ApiException(status, message);
+        }
 
         if (status < 200 || status >= 300) {
             throw new ApiException(
@@ -334,6 +347,12 @@ final class ApiClient {
         ) {
             throw new IllegalArgumentException(
                 "Adresa serverului trebuie să înceapă cu https:// sau http://"
+            );
+        }
+
+        if (normalized.matches("(?i)^http://[^/]+:8443$")) {
+            throw new IllegalArgumentException(
+                "Portul 8443 folosește HTTPS. Scrie https:// la începutul adresei."
             );
         }
 

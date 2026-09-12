@@ -61,7 +61,6 @@ proxy_responds() {
         --noproxy '*' \
         --max-time 5 \
         --output /dev/null \
-        --connect-to "$HTTPS_HOST:$HTTPS_PORT:127.0.0.1:$HTTPS_PORT" \
         "https://$HTTPS_HOST:$HTTPS_PORT/api/health"
 }
 

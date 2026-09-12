@@ -22,6 +22,7 @@ from flask import (
     url_for,
 )
 
+from app.background_monitor import collect_background_snapshot
 from app.ai_runtime import get_runtime_status
 from app.database import (
     DATABASE_PATH,
@@ -42,7 +43,6 @@ from app.downloads import (
     transmission_call,
 )
 from app.speech_activity import speech_analysis_available
-from app.resource_monitor import collect_resource_usage
 from app.service_control import (
     ServiceControlError,
     ai_is_enabled,
@@ -876,21 +876,18 @@ def system_status_api():
 @system_status_blueprint.get("/api/system/resources")
 @require_status_admin
 def system_resources_api():
-    payload = collect_resource_usage()
-    battery = collect_battery_data()
-
-    temperature = None
-
-    if battery and battery.get("temperature") is not None:
-        try:
-            temperature = float(battery["temperature"])
-        except (TypeError, ValueError):
-            pass
+    snapshot = collect_background_snapshot(
+        0.3,
+        include_android_processes=True,
+    )
+    payload = snapshot["resources"]
+    battery = snapshot["power"].get("battery", {})
+    temperature = battery.get("temperature_c")
 
     payload["temperature"] = {
         "available": temperature is not None,
         "celsius": temperature,
-        "health": battery.get("health") if battery else None,
+        "health": battery.get("health"),
     }
 
     return jsonify(payload)

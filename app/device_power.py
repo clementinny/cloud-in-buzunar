@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT_TIMEOUT_SECONDS = 6
-BATTERY_ROOT_COMMAND = """
+BATTERY_ROOT_COMMAND_BODY = """
 base=/sys/class/power_supply/battery
 for name in capacity temp status health voltage_now current_now current_avg \
 charge_counter charge_full charge_full_design energy_full \
@@ -28,9 +28,30 @@ for item in \
         [ -n "$value" ] && printf 'limit_%s=%s\n' "$driver" "$value"
     fi
 done
-exit 0
+power_source_seen=false
+power_source_online=false
+for item in \
+    "PLUGGED_USB:/sys/class/power_supply/usb/online" \
+    "PLUGGED_AC:/sys/class/power_supply/ac/online" \
+    "PLUGGED_WIRELESS:/sys/class/power_supply/wireless/online"; do
+    source_name=${item%%:*}
+    path=${item#*:}
+    if [ -r "$path" ]; then
+        power_source_seen=true
+        value=$(cat "$path" 2>/dev/null)
+        if [ "$value" = 1 ]; then
+            printf 'plugged=%s\n' "$source_name"
+            power_source_online=true
+            break
+        fi
+    fi
+done
+if [ "$power_source_seen" = true ] && [ "$power_source_online" = false ]; then
+    printf '%s\n' 'plugged=UNPLUGGED'
+fi
 """.strip()
-THERMAL_ROOT_COMMAND = """
+BATTERY_ROOT_COMMAND = BATTERY_ROOT_COMMAND_BODY + "\nexit 0"
+THERMAL_ROOT_COMMAND_BODY = """
 for zone in /sys/class/thermal/thermal_zone*; do
     [ -d "$zone" ] || continue
     type=$(cat "$zone/type" 2>/dev/null)
@@ -38,6 +59,15 @@ for zone in /sys/class/thermal/thermal_zone*; do
     [ -n "$type" ] && [ -n "$temp" ] \
         && printf 'sensor|%s|%s\n' "$type" "$temp"
 done
+""".strip()
+THERMAL_ROOT_COMMAND = THERMAL_ROOT_COMMAND_BODY + "\nexit 0"
+POWER_ROOT_COMMAND = f"""
+printf '%s\n' '__CLOUD_BATTERY__'
+{BATTERY_ROOT_COMMAND_BODY}
+printf '%s\n' '__CLOUD_THERMAL__'
+{THERMAL_ROOT_COMMAND_BODY}
+printf '%s\n' '__CLOUD_THERMAL_SERVICE__'
+dumpsys thermalservice 2>/dev/null || true
 exit 0
 """.strip()
 CHARGE_LIMIT_PATHS = {
@@ -179,15 +209,26 @@ def read_termux_battery_status():
     return payload if result.returncode == 0 and isinstance(payload, dict) else {}
 
 
-def collect_battery_health():
-    try:
-        values = parse_key_values(run_root_shell(BATTERY_ROOT_COMMAND))
-        root_available = True
-    except DevicePowerError:
-        values = {}
-        root_available = False
+def collect_battery_health(root_output=None, root_available=None):
+    if root_available is None:
+        try:
+            root_output = run_root_shell(BATTERY_ROOT_COMMAND)
+            root_available = True
+        except DevicePowerError:
+            root_output = ""
+            root_available = False
 
-    termux = read_termux_battery_status()
+    values = parse_key_values(root_output or "")
+
+    termux = {}
+
+    core_values_missing = any(
+        name not in values
+        for name in ("capacity", "temp", "voltage_now", "plugged")
+    ) or not ({"current_now", "current_avg"} & set(values))
+
+    if core_values_missing:
+        termux = read_termux_battery_status()
     percentage = number(values, "capacity")
     temperature = normalize_temperature(number(values, "temp"))
     voltage = normalize_voltage(number(values, "voltage_now"))
@@ -278,6 +319,7 @@ def collect_battery_health():
         "percentage": int(percentage) if percentage is not None else None,
         "temperature_c": temperature,
         "status": values.get("status") or termux.get("status"),
+        "plugged": values.get("plugged") or termux.get("plugged"),
         "health": values.get("health") or termux.get("health"),
         "technology": values.get("technology") or termux.get("technology"),
         "voltage_v": voltage,
@@ -330,19 +372,29 @@ def select_sensor_temperature(sensors, keywords):
     return max(matches) if matches else None
 
 
-def collect_thermal_status(battery_temperature=None):
-    try:
-        sensors = parse_thermal_sensors(run_root_shell(THERMAL_ROOT_COMMAND))
-        root_available = True
-    except DevicePowerError:
-        sensors = []
+def collect_thermal_status(
+    battery_temperature=None,
+    sensor_output=None,
+    service_output=None,
+    root_available=None,
+):
+    if root_available is None:
         root_available = False
 
-    try:
-        service_output = run_root_shell("dumpsys thermalservice", timeout=8)
-        root_available = True
-    except DevicePowerError:
-        service_output = ""
+        try:
+            sensor_output = run_root_shell(THERMAL_ROOT_COMMAND)
+            root_available = True
+        except DevicePowerError:
+            sensor_output = ""
+
+        try:
+            service_output = run_root_shell("dumpsys thermalservice", timeout=8)
+            root_available = True
+        except DevicePowerError:
+            service_output = ""
+
+    sensors = parse_thermal_sensors(sensor_output or "")
+    service_output = service_output or ""
 
     status_match = re.search(
         r"Thermal\s+Status\s*:\s*(\d+)",
@@ -412,7 +464,45 @@ def apply_charge_limit(driver, limit_percent):
     return applied_value
 
 
-def collect_power_snapshot():
-    battery = collect_battery_health()
-    thermal = collect_thermal_status(battery.get("temperature_c"))
+def parse_power_root_snapshot(text):
+    sections = {"battery": [], "thermal": [], "service": []}
+    current = None
+    markers = {
+        "__CLOUD_BATTERY__": "battery",
+        "__CLOUD_THERMAL__": "thermal",
+        "__CLOUD_THERMAL_SERVICE__": "service",
+    }
+
+    for line in text.splitlines():
+        marker = markers.get(line.strip())
+
+        if marker is not None:
+            current = marker
+        elif current is not None:
+            sections[current].append(line)
+
+    return {name: "\n".join(lines) for name, lines in sections.items()}
+
+
+def collect_power_snapshot(root_output=None, root_available=None):
+    if root_available is None:
+        try:
+            root_output = run_root_shell(POWER_ROOT_COMMAND, timeout=12)
+            root_available = True
+        except DevicePowerError:
+            root_output = ""
+            root_available = False
+
+    sections = parse_power_root_snapshot(root_output or "")
+
+    battery = collect_battery_health(
+        root_output=sections["battery"],
+        root_available=root_available,
+    )
+    thermal = collect_thermal_status(
+        battery.get("temperature_c"),
+        sensor_output=sections["thermal"],
+        service_output=sections["service"],
+        root_available=root_available,
+    )
     return {"battery": battery, "thermal": thermal}

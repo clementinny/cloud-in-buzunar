@@ -18,7 +18,6 @@ SERVICE_LOG="$LOG_DIR/cloud-services.log"
 WATCHDOG_LOG="$LOG_DIR/cloud-watchdog.log"
 BACKUP_LOG="$LOG_DIR/backup.log"
 THERMAL_LOG="$LOG_DIR/thermal-guardian.log"
-ALERT_LOG="$LOG_DIR/reliability-alerts.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
 
@@ -33,7 +32,6 @@ BACKUP_KEEP=3
 BACKUP_INTERVAL_HOURS=24
 WATCHDOG_INTERVAL_SECONDS=60
 THERMAL_CHECK_TIMEOUT_SECONDS=45
-ALERT_CHECK_INTERVAL_SECONDS=120
 
 mkdir -p "$LOG_DIR" "$RUNTIME_DIR"
 
@@ -144,29 +142,6 @@ run_thermal_guardian_check() {
 }
 
 
-run_reliability_alert_check() {
-    if [ ! -x "$PYTHON" ]; then
-        log_message ERROR "Python din mediul virtual lipsește; alertele nu pot fi evaluate."
-        return 1
-    fi
-
-    cd "$PROJECT_DIR" || return 1
-
-    local -a command=("$PYTHON" -m app.reliability_alerts check)
-
-    if command_exists timeout; then
-        command=(timeout 90 "${command[@]}")
-    fi
-
-    if "${command[@]}" >> "$ALERT_LOG" 2>&1; then
-        return 0
-    fi
-
-    log_message WARN "Evaluarea alertelor a eșuat; vezi $ALERT_LOG."
-    return 1
-}
-
-
 validated_watchdog_interval() {
     local configured="${WATCHDOG_INTERVAL_SECONDS:-60}"
 
@@ -179,24 +154,6 @@ validated_watchdog_interval() {
 
     if [ "$configured" -lt 15 ] || [ "$configured" -gt 3600 ]; then
         printf '60\n'
-    else
-        printf '%s\n' "$configured"
-    fi
-}
-
-
-validated_alert_interval() {
-    local configured="${ALERT_CHECK_INTERVAL_SECONDS:-120}"
-
-    case "$configured" in
-        ''|*[!0-9]*)
-            printf '120\n'
-            return
-            ;;
-    esac
-
-    if [ "$configured" -lt 30 ] || [ "$configured" -gt 3600 ]; then
-        printf '120\n'
     else
         printf '%s\n' "$configured"
     fi
@@ -692,17 +649,14 @@ run_watchdog() {
     local ai_failures=0
     local https_failures=0
     local last_backup_check=0
-    local last_alert_check=0
     local current_time
     local watchdog_interval
-    local alert_interval
 
     log_message INFO "Watchdog-ul monitorizează serviciile."
 
     while true; do
         load_config
         watchdog_interval="$(validated_watchdog_interval)"
-        alert_interval="$(validated_alert_interval)"
 
         if [ "${WATCHDOG_INTERVAL_SECONDS:-60}" != "$watchdog_interval" ]; then
             log_message WARN \
@@ -795,11 +749,6 @@ run_watchdog() {
         fi
 
         current_time="$(date +%s)"
-
-        if [ $((current_time - last_alert_check)) -ge "$alert_interval" ]; then
-            run_reliability_alert_check || true
-            last_alert_check="$current_time"
-        fi
 
         if [ $((current_time - last_backup_check)) -ge 3600 ]; then
             start_backup_if_due

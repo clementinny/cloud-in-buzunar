@@ -6,10 +6,11 @@ import subprocess
 SILENCE_PATTERN = re.compile(
     r"silence_(start|end):\s*(-?\d+(?:\.\d+)?)"
 )
-SILENCE_THRESHOLD = "-30dB"
-MINIMUM_SILENCE_SECONDS = 0.6
-MINIMUM_ACTIVITY_SECONDS = 1.0
+SILENCE_THRESHOLD = "-38dB"
+MINIMUM_SILENCE_SECONDS = 0.35
+MINIMUM_ACTIVITY_SECONDS = 0.25
 STARTUP_NOISE_GRACE_SECONDS = 1.5
+SHUTDOWN_NOISE_GRACE_SECONDS = 1.0
 MAXIMUM_EVENTS = 300
 
 
@@ -36,6 +37,8 @@ def detect_speech_activity(recording_path, duration_seconds):
                 "-vn",
                 "-af",
                 (
+                    "asetpts=PTS-STARTPTS,"
+                    "aresample=16000:async=1:first_pts=0,"
                     "highpass=f=120,"
                     "lowpass=f=3800,"
                     "silencedetect="
@@ -80,26 +83,37 @@ def detect_speech_activity(recording_path, duration_seconds):
     if silence_started_at is not None:
         silence_intervals.append((silence_started_at, duration))
 
-    activity_starts = []
+    activity_intervals = []
     activity_cursor = 0.0
 
     for silence_start, silence_end in silence_intervals:
-        activity_duration = silence_start - activity_cursor
+        if silence_start > activity_cursor:
+            activity_intervals.append((activity_cursor, silence_start))
+
+        activity_cursor = max(activity_cursor, silence_end)
+
+    if duration > activity_cursor:
+        activity_intervals.append((activity_cursor, duration))
+
+    activity_starts = []
+
+    for activity_start, activity_end in activity_intervals:
+        activity_duration = activity_end - activity_start
         is_startup_noise = (
-            activity_cursor == 0
-            and silence_start <= STARTUP_NOISE_GRACE_SECONDS
+            activity_start <= 0.05
+            and activity_end <= STARTUP_NOISE_GRACE_SECONDS
+        )
+        is_shutdown_noise = (
+            activity_end >= duration - 0.05
+            and activity_start >= duration - SHUTDOWN_NOISE_GRACE_SECONDS
         )
 
         if (
             activity_duration >= MINIMUM_ACTIVITY_SECONDS
             and not is_startup_noise
+            and not is_shutdown_noise
         ):
-            activity_starts.append(round(activity_cursor))
-
-        activity_cursor = max(activity_cursor, silence_end)
-
-    if duration - activity_cursor >= MINIMUM_ACTIVITY_SECONDS:
-        activity_starts.append(round(activity_cursor))
+            activity_starts.append(round(activity_start))
 
     unique_starts = []
 
