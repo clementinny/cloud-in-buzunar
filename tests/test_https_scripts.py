@@ -50,6 +50,8 @@ class HttpsScriptTest(unittest.TestCase):
         result = self.run_configure(
             "--host",
             "phone.home.arpa",
+            "--additional-host",
+            "100.79.176.74",
             "--mode",
             "internal",
             "--no-autostart",
@@ -60,13 +62,26 @@ class HttpsScriptTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("https://phone.home.arpa:8443", caddyfile)
+        self.assertIn("https://100.79.176.74:8443", caddyfile)
         self.assertIn("tls internal", caddyfile)
         self.assertIn("reverse_proxy http://127.0.0.1:8080", caddyfile)
         self.assertNotIn("caddy-access.log", caddyfile)
         self.assertFalse((self.root / "data" / "autostart.conf").exists())
+        proxy_config = (self.root / "data" / "caddy" / "proxy.conf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("HTTPS_ADDITIONAL_HOSTS=100.79.176.74", proxy_config)
 
     def test_invalid_host_is_rejected_before_writing_configuration(self):
         result = self.run_configure("--host", "../../outside")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / "data" / "caddy" / "Caddyfile").exists())
+
+    def test_invalid_additional_host_is_rejected(self):
+        result = self.run_configure(
+            "--host", "phone.home.arpa", "--additional-host", "bad host"
+        )
 
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / "data" / "caddy" / "Caddyfile").exists())

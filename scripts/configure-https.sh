@@ -10,6 +10,7 @@ CADDYFILE="$CADDY_DIR/Caddyfile"
 PROXY_CONFIG="$CADDY_DIR/proxy.conf"
 AUTOSTART_CONFIG="$DATA_DIR/autostart.conf"
 HOST_NAME=""
+ADDITIONAL_HOSTS=()
 HTTPS_PORT=8443
 UPSTREAM="127.0.0.1:8080"
 TLS_MODE="internal"
@@ -28,6 +29,7 @@ Utilizare:
 
 Opțiuni:
   --host NUME             Nume DNS sau adresă IP folosită în browser (obligatoriu)
+  --additional-host NUME  Adresă HTTPS suplimentară; opțiunea poate fi repetată
   --port PORT             Port HTTPS local (implicit: 8443)
   --upstream HOST:PORT    Serverul web intern (implicit: 127.0.0.1:8080)
   --mode MOD              internal, automatic sau certificate (implicit: internal)
@@ -70,6 +72,11 @@ while [ "$#" -gt 0 ]; do
         --host)
             [ "$#" -ge 2 ] || die "--host necesită o valoare."
             HOST_NAME="$2"
+            shift 2
+            ;;
+        --additional-host)
+            [ "$#" -ge 2 ] || die "--additional-host necesită o valoare."
+            ADDITIONAL_HOSTS+=("$2")
             shift 2
             ;;
         --port)
@@ -117,11 +124,18 @@ done
 
 [ -n "$HOST_NAME" ] || die "lipsește --host."
 
-case "$HOST_NAME" in
-    *[!A-Za-z0-9._-]*|.*|*..*|-*|*-|_*|'')
-        die "numele gazdei conține caractere nepermise."
-        ;;
-esac
+validate_host() {
+    case "$1" in
+        *[!A-Za-z0-9._-]*|.*|*..*|-*|*-|_*|'')
+            die "numele gazdei conține caractere nepermise: $1"
+            ;;
+    esac
+}
+
+validate_host "$HOST_NAME"
+for additional_host in "${ADDITIONAL_HOSTS[@]}"; do
+    validate_host "$additional_host"
+done
 
 case "$HTTPS_PORT" in
     ''|*[!0-9]*) die "portul HTTPS trebuie să fie numeric." ;;
@@ -174,7 +188,11 @@ trap 'rm -f "$TEMP_CADDYFILE"' EXIT INT TERM
     printf '    admin 127.0.0.1:2019\n'
     printf '    auto_https disable_redirects\n'
     printf '}\n\n'
-    printf 'https://%s:%s {\n' "$HOST_NAME" "$HTTPS_PORT"
+    printf 'https://%s:%s' "$HOST_NAME" "$HTTPS_PORT"
+    for additional_host in "${ADDITIONAL_HOSTS[@]}"; do
+        printf ', https://%s:%s' "$additional_host" "$HTTPS_PORT"
+    done
+    printf ' {\n'
     [ -n "$TLS_DIRECTIVE" ] && printf '%s\n' "$TLS_DIRECTIVE"
     printf '    encode zstd gzip\n'
     printf '    reverse_proxy http://%s {\n' "$UPSTREAM"
@@ -204,6 +222,7 @@ chmod 600 "$CADDYFILE"
 
 {
     printf 'HTTPS_HOST=%q\n' "$HOST_NAME"
+    printf 'HTTPS_ADDITIONAL_HOSTS=%q\n' "${ADDITIONAL_HOSTS[*]}"
     printf 'HTTPS_PORT=%q\n' "$HTTPS_PORT"
     printf 'HTTPS_MODE=%q\n' "$TLS_MODE"
     printf 'HTTPS_UPSTREAM=%q\n' "$UPSTREAM"
@@ -221,6 +240,10 @@ if [ "$ENABLE_AUTOSTART" = true ]; then
 fi
 
 printf 'HTTPS configurat: https://%s:%s\n' "$HOST_NAME" "$HTTPS_PORT"
+for additional_host in "${ADDITIONAL_HOSTS[@]}"; do
+    printf 'Adresă HTTPS suplimentară: https://%s:%s\n' \
+        "$additional_host" "$HTTPS_PORT"
+done
 printf 'Configurație Caddy: %s\n' "$CADDYFILE"
 printf 'Pornire automată HTTPS: %s\n' "$ENABLE_AUTOSTART"
 
