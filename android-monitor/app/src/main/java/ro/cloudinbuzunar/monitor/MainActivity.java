@@ -25,6 +25,9 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int PERMISSION_REQUEST = 200;
+    private static final int PERMISSION_ACTION_NONE = 0;
+    private static final int PERMISSION_ACTION_ARM = 1;
+    private static final int PERMISSION_ACTION_SERVER_WATCH = 2;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -34,9 +37,16 @@ public final class MainActivity extends Activity {
     private Button pairButton;
     private Button armButton;
     private Button disarmButton;
+    private Button serverWatchStartButton;
+    private Button serverWatchStopButton;
     private Spinner cameraFacingSpinner;
+    private Spinner serverPollIntervalSpinner;
+    private Spinner serverFailureThresholdSpinner;
+    private EditText serverUrlInput;
     private TextView statusText;
     private TextView messageText;
+    private TextView serverWatchStatus;
+    private int pendingPermissionAction = PERMISSION_ACTION_NONE;
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -51,6 +61,25 @@ public final class MainActivity extends Activity {
         }
     };
 
+    private final BroadcastReceiver serverWatchStatusReceiver =
+        new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (
+                    !ServerWatchService.STATUS_ACTION.equals(
+                        intent.getAction()
+                    )
+                ) {
+                    return;
+                }
+
+                updateServerWatchState(
+                    intent.getStringExtra(ServerWatchService.EXTRA_STATE),
+                    intent.getStringExtra(ServerWatchService.EXTRA_MESSAGE)
+                );
+            }
+        };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -62,9 +91,23 @@ public final class MainActivity extends Activity {
         pairButton = findViewById(R.id.pairButton);
         armButton = findViewById(R.id.armButton);
         disarmButton = findViewById(R.id.disarmButton);
+        serverWatchStartButton = findViewById(
+            R.id.serverWatchStartButton
+        );
+        serverWatchStopButton = findViewById(
+            R.id.serverWatchStopButton
+        );
         cameraFacingSpinner = findViewById(R.id.cameraFacingSpinner);
+        serverPollIntervalSpinner = findViewById(
+            R.id.serverPollIntervalSpinner
+        );
+        serverFailureThresholdSpinner = findViewById(
+            R.id.serverFailureThresholdSpinner
+        );
+        serverUrlInput = findViewById(R.id.serverUrlInput);
         statusText = findViewById(R.id.deviceStatus);
         messageText = findViewById(R.id.messageText);
+        serverWatchStatus = findViewById(R.id.serverWatchStatus);
 
         String previousCrash = CrashReporter.consume(this);
 
@@ -83,10 +126,17 @@ public final class MainActivity extends Activity {
         cameraFacingSpinner.setSelection(
             "user".equals(MonitorStateStore.cameraFacing(this)) ? 1 : 0
         );
+        configureServerWatchControls();
 
         pairButton.setOnClickListener(view -> pairDevice());
         armButton.setOnClickListener(view -> requestPermissionsAndArm());
         disarmButton.setOnClickListener(view -> disarm());
+        serverWatchStartButton.setOnClickListener(
+            view -> requestNotificationAndStartServerWatch()
+        );
+        serverWatchStopButton.setOnClickListener(
+            view -> stopServerWatch()
+        );
 
         showPairingState();
     }
@@ -102,15 +152,41 @@ public final class MainActivity extends Activity {
             registerReceiver(statusReceiver, filter);
         }
 
+        IntentFilter serverFilter = new IntentFilter(
+            ServerWatchService.STATUS_ACTION
+        );
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                serverWatchStatusReceiver,
+                serverFilter,
+                Context.RECEIVER_NOT_EXPORTED
+            );
+        } else {
+            registerReceiver(serverWatchStatusReceiver, serverFilter);
+        }
+
         updateServiceState(
             MonitorService.currentState,
             MonitorService.currentMessage
         );
+        updateServerWatchState(
+            ServerWatchService.currentState,
+            ServerWatchService.currentMessage
+        );
+
+        if (ServerMonitorSettingsStore.monitoringEnabled(this)) {
+            startForegroundService(
+                new Intent(this, ServerWatchService.class)
+                    .setAction(ServerWatchService.ACTION_START)
+            );
+        }
     }
 
     @Override
     protected void onStop() {
         unregisterReceiver(statusReceiver);
+        unregisterReceiver(serverWatchStatusReceiver);
         super.onStop();
     }
 
@@ -141,11 +217,27 @@ public final class MainActivity extends Activity {
         pairButton.setEnabled(false);
         messageText.setText("Se asociază aplicația...");
         String deviceName = Build.MANUFACTURER + " " + Build.MODEL;
+        final String serverUrl;
+
+        try {
+            serverUrl = ApiClient.normalizeServerUrl(
+                serverUrlInput.getText().toString()
+            );
+        } catch (IllegalArgumentException error) {
+            pairButton.setEnabled(true);
+            messageText.setText(error.getMessage());
+            return;
+        }
 
         executor.execute(() -> {
             try {
-                String token = ApiClient.pair(code, deviceName.trim());
+                String token = ApiClient.pair(
+                    serverUrl,
+                    code,
+                    deviceName.trim()
+                );
                 TokenStore.save(this, token);
+                ServerMonitorSettingsStore.setServerUrl(this, serverUrl);
 
                 runOnUiThread(() -> {
                     pairingCodeInput.setText("");
@@ -167,6 +259,7 @@ public final class MainActivity extends Activity {
     }
 
     private void requestPermissionsAndArm() {
+        pendingPermissionAction = PERMISSION_ACTION_ARM;
         List<String> missing = new ArrayList<>();
 
         if (checkSelfPermission(Manifest.permission.CAMERA)
@@ -195,7 +288,27 @@ public final class MainActivity extends Activity {
             return;
         }
 
+        pendingPermissionAction = PERMISSION_ACTION_NONE;
         arm();
+    }
+
+    private void requestNotificationAndStartServerWatch() {
+        pendingPermissionAction = PERMISSION_ACTION_SERVER_WATCH;
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                PERMISSION_REQUEST
+            );
+            return;
+        }
+
+        pendingPermissionAction = PERMISSION_ACTION_NONE;
+        startServerWatch();
     }
 
     @Override
@@ -215,11 +328,19 @@ public final class MainActivity extends Activity {
                 messageText.setText(
                     "Camera, microfonul și notificările trebuie permise."
                 );
+                pendingPermissionAction = PERMISSION_ACTION_NONE;
                 return;
             }
         }
 
-        arm();
+        int action = pendingPermissionAction;
+        pendingPermissionAction = PERMISSION_ACTION_NONE;
+
+        if (action == PERMISSION_ACTION_SERVER_WATCH) {
+            startServerWatch();
+        } else if (action == PERMISSION_ACTION_ARM) {
+            arm();
+        }
     }
 
     private void arm() {
@@ -237,7 +358,113 @@ public final class MainActivity extends Activity {
             .setAction(MonitorService.ACTION_ARM)
             .putExtra(MonitorService.EXTRA_CAMERA_FACING, facing);
         startForegroundService(serviceIntent);
+        startServerWatch();
         updateServiceState("starting", "Se pornește serviciul...");
+    }
+
+    private void configureServerWatchControls() {
+        serverUrlInput.setText(
+            ServerMonitorSettingsStore.serverUrl(this)
+        );
+        ArrayAdapter<String> intervalAdapter = new ArrayAdapter<>(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            new String[]{"30 secunde", "60 secunde", "2 minute"}
+        );
+        serverPollIntervalSpinner.setAdapter(intervalAdapter);
+        int interval =
+            ServerMonitorSettingsStore.pollIntervalSeconds(this);
+        serverPollIntervalSpinner.setSelection(
+            interval == 30 ? 0 : interval == 120 ? 2 : 1
+        );
+
+        ArrayAdapter<String> thresholdAdapter = new ArrayAdapter<>(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            new String[]{"2 verificări", "3 verificări", "5 verificări"}
+        );
+        serverFailureThresholdSpinner.setAdapter(thresholdAdapter);
+        int threshold =
+            ServerMonitorSettingsStore.failureThreshold(this);
+        serverFailureThresholdSpinner.setSelection(
+            threshold == 2 ? 0 : threshold == 5 ? 2 : 1
+        );
+    }
+
+    private void startServerWatch() {
+        final String serverUrl;
+
+        try {
+            serverUrl = ApiClient.normalizeServerUrl(
+                serverUrlInput.getText().toString()
+            );
+        } catch (IllegalArgumentException error) {
+            messageText.setText(error.getMessage());
+            return;
+        }
+
+        int intervalPosition =
+            serverPollIntervalSpinner.getSelectedItemPosition();
+        int interval = intervalPosition == 0
+            ? 30
+            : intervalPosition == 2 ? 120 : 60;
+        int thresholdPosition =
+            serverFailureThresholdSpinner.getSelectedItemPosition();
+        int threshold = thresholdPosition == 0
+            ? 2
+            : thresholdPosition == 2 ? 5 : 3;
+        ServerMonitorSettingsStore.setServerUrl(this, serverUrl);
+        ServerMonitorSettingsStore.setPollIntervalSeconds(this, interval);
+        ServerMonitorSettingsStore.setFailureThreshold(this, threshold);
+        ServerMonitorSettingsStore.setMonitoringEnabled(this, true);
+        startForegroundService(
+            new Intent(this, ServerWatchService.class)
+                .setAction(ServerWatchService.ACTION_START)
+        );
+        updateServerWatchState(
+            "checking",
+            "Se verifică serverul " + serverUrl
+        );
+    }
+
+    private void stopServerWatch() {
+        ServerMonitorSettingsStore.setMonitoringEnabled(this, false);
+        startService(
+            new Intent(this, ServerWatchService.class)
+                .setAction(ServerWatchService.ACTION_STOP)
+        );
+        updateServerWatchState(
+            "stopped",
+            "Monitorizarea serverului este oprită."
+        );
+    }
+
+    private void updateServerWatchState(String state, String message) {
+        boolean enabled =
+            ServerMonitorSettingsStore.monitoringEnabled(this);
+        serverWatchStartButton.setEnabled(!enabled);
+        serverWatchStopButton.setEnabled(enabled);
+        serverUrlInput.setEnabled(!enabled);
+        serverPollIntervalSpinner.setEnabled(!enabled);
+        serverFailureThresholdSpinner.setEnabled(!enabled);
+
+        String label;
+
+        if ("online".equals(state)) {
+            label = "Server online · alertele sunt active";
+        } else if ("offline".equals(state)) {
+            label = "SERVER INDISPONIBIL · verificările continuă";
+        } else if ("checking".equals(state) || enabled) {
+            label = "Se verifică serverul...";
+        } else {
+            label = "Alertele pentru server sunt oprite";
+        }
+
+        serverWatchStatus.setText(label);
+
+        if (message != null && !message.isEmpty()) {
+            messageText.setText(message);
+        }
     }
 
     private void disarm() {

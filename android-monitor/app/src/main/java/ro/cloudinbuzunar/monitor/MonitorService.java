@@ -186,7 +186,10 @@ public final class MonitorService extends Service {
             return;
         }
 
-        api = new ApiClient(token);
+        api = new ApiClient(
+            token,
+            ServerMonitorSettingsStore.serverUrl(this)
+        );
         sourceId = UUID.randomUUID().toString();
 
         try {

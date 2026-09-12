@@ -37,9 +37,9 @@ jobs:
           path: ~/.android/debug.keystore
           key: cloud-in-buzunar-monitor-debug-key-v1
 
-      - name: Build debug APK
+      - name: Test and build debug APK
         working-directory: android-monitor
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon testDebugUnitTest assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

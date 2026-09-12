@@ -37,6 +37,104 @@
             android:textSize="16sp" />
 
         <LinearLayout
+            android:id="@+id/serverWatchPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:background="@color/surface"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Alerte server"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/serverWatchStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Alertele pentru server sunt oprite"
+                android:textColor="@color/cyan"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="Adresa serverului"
+                android:textColor="@color/text_secondary" />
+
+            <EditText
+                android:id="@+id/serverUrlInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/field_background"
+                android:hint="https://192.168.1.225:8443"
+                android:inputType="textUri"
+                android:singleLine="true"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Interval de verificare"
+                android:textColor="@color/text_secondary" />
+
+            <Spinner
+                android:id="@+id/serverPollIntervalSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/field_background"
+                android:popupBackground="@color/surface_light" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Anunță căderea după"
+                android:textColor="@color/text_secondary" />
+
+            <Spinner
+                android:id="@+id/serverFailureThresholdSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/field_background"
+                android:popupBackground="@color/surface_light" />
+
+            <Button
+                android:id="@+id/serverWatchStartButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/button_primary"
+                android:text="Salvează și pornește alertele"
+                android:textAllCaps="false"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/serverWatchStopButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/button_secondary"
+                android:enabled="false"
+                android:text="Oprește alertele serverului"
+                android:textAllCaps="false"
+                android:textColor="@color/text_primary" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/pairingPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

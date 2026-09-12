@@ -11,8 +11,8 @@ android {
         applicationId = "ro.cloudinbuzunar.monitor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
     }
 
     buildTypes {
@@ -33,4 +33,5 @@ android {
 
 dependencies {
     implementation("io.github.webrtc-sdk:android:150.7871.01")
+    testImplementation("junit:junit:4.13.2")
 }

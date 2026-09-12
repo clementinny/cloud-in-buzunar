@@ -1,6 +1,7 @@
 package ro.cloudinbuzunar.monitor;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
@@ -14,25 +15,56 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 final class ApiClient {
-    static final String SERVER_URL = "http://127.0.0.1:8080";
+    static final String DEFAULT_SERVER_URL = "http://127.0.0.1:8080";
 
     private final String token;
+    private final String serverUrl;
 
     ApiClient(String token) {
-        this.token = token;
+        this(token, DEFAULT_SERVER_URL);
     }
 
-    static String pair(String code, String deviceName) throws Exception {
+    ApiClient(String token, String serverUrl) {
+        this.token = token;
+        this.serverUrl = normalizeServerUrl(serverUrl);
+    }
+
+    static String pair(
+        String serverUrl,
+        String code,
+        String deviceName
+    ) throws Exception {
         JSONObject payload = new JSONObject()
             .put("code", code)
             .put("device_name", deviceName);
         JSONObject response = request(
+            normalizeServerUrl(serverUrl),
             "POST",
             "/api/monitor/devices/pair",
             payload,
             null
         );
         return response.getString("token");
+    }
+
+    JSONObject health() throws Exception {
+        return request(serverUrl, "GET", "/api/health", null, null);
+    }
+
+    JSONObject alertFeed(int limit) throws Exception {
+        return authenticatedRequest(
+            "GET",
+            "/api/system/alerts/feed?limit=" + limit,
+            null
+        );
+    }
+
+    void acknowledgeAlerts(JSONArray eventIds) throws Exception {
+        authenticatedRequest(
+            "POST",
+            "/api/system/alerts/feed/ack",
+            new JSONObject().put("event_ids", eventIds)
+        );
     }
 
     JSONObject arm(String sourceId, String cameraFacing) throws Exception {
@@ -76,7 +108,7 @@ final class ApiClient {
     ) throws Exception {
         String boundary = "CloudMonitor-" + System.nanoTime();
         HttpURLConnection connection = (HttpURLConnection) new URL(
-            SERVER_URL + "/api/monitor/recordings"
+            serverUrl + "/api/monitor/recordings"
         ).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(10000);
@@ -226,17 +258,18 @@ final class ApiClient {
         String path,
         JSONObject body
     ) throws Exception {
-        return request(method, path, body, token);
+        return request(serverUrl, method, path, body, token);
     }
 
     private static JSONObject request(
+        String serverUrl,
         String method,
         String path,
         JSONObject body,
         String token
     ) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(
-            SERVER_URL + path
+            serverUrl + path
         ).openConnection();
         connection.setRequestMethod(method);
         connection.setConnectTimeout(5000);
@@ -286,6 +319,25 @@ final class ApiClient {
         }
 
         return response;
+    }
+
+    static String normalizeServerUrl(String value) {
+        String normalized = value == null ? "" : value.trim();
+
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+
+        if (
+            !normalized.startsWith("https://")
+            && !normalized.startsWith("http://")
+        ) {
+            throw new IllegalArgumentException(
+                "Adresa serverului trebuie să înceapă cu https:// sau http://"
+            );
+        }
+
+        return normalized;
     }
 
     private static String readStream(InputStream stream) throws Exception {
