@@ -224,7 +224,7 @@ start_web() {
         --bind 0.0.0.0:8080 \
         --workers 1 \
         --threads 4 \
-        --timeout 180 \
+        --timeout 900 \
         --access-logfile "$LOG_DIR/gunicorn-access.log" \
         --access-logformat '%(h)s %(s)s %(L)s' \
         --error-logfile "$LOG_DIR/gunicorn-error.log" \
@@ -864,6 +864,11 @@ case "${1:-}" in
             exit 1
         fi
         ;;
+    migration-restart)
+        sleep 2
+        restart_web
+        start_watchdog
+        ;;
     status)
         print_service_status
         ;;
@@ -897,7 +902,7 @@ case "${1:-}" in
         ;;
     *)
         printf '%s\n' \
-            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop}"
+            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|migration-restart|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop}"
         exit 1
         ;;
 esac

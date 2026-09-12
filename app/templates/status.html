@@ -395,6 +395,57 @@
                     Seifurile și configurația sunt incluse automat. Modelele
                     AI pot mări arhiva cu mai mulți GB.
                 </p>
+                <div class="migration-import-panel">
+                    <div>
+                        <h4>Importă pe telefonul nou</h4>
+                        <p>
+                            Încarcă arhiva descărcată de pe telefonul vechi.
+                            Este verificată complet înainte să poată fi restaurată.
+                        </p>
+                    </div>
+                    <label class="migration-file-field">
+                        <span>Arhiva .tar.gz</span>
+                        <input
+                            id="migration-import-file"
+                            type="file"
+                            accept=".gz,application/gzip"
+                        >
+                    </label>
+                    <label class="migration-checksum-field">
+                        <span>SHA-256 (opțional, recomandat)</span>
+                        <input
+                            id="migration-import-sha256"
+                            type="text"
+                            inputmode="text"
+                            maxlength="512"
+                            autocomplete="off"
+                            spellcheck="false"
+                            placeholder="Hashul sau linia din fișierul .sha256"
+                        >
+                    </label>
+                    <button id="upload-migration-button" type="button">
+                        Încarcă și verifică
+                    </button>
+                </div>
+                <div id="migration-restore-panel" class="migration-restore-panel" hidden>
+                    <div>
+                        <h4>Confirmă restaurarea</h4>
+                        <p>
+                            Scrie exact <strong id="migration-restore-name"></strong>.
+                            Datele actuale vor fi arhivate automat înainte de import.
+                        </p>
+                    </div>
+                    <input
+                        id="migration-restore-confirmation"
+                        type="text"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-label="Confirmarea exactă a arhivei"
+                    >
+                    <button id="restore-migration-button" type="button">
+                        Restaurează pe acest telefon
+                    </button>
+                </div>
                 <p id="migration-action-status" role="status" hidden></p>
                 <div id="migration-list" class="backup-list" aria-live="polite"></div>
                 <p id="migration-list-empty" class="backup-list-empty" hidden>

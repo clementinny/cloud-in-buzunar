@@ -28,6 +28,25 @@ const migrationIncludeModels = document.querySelector(
 const migrationActionStatus = document.querySelector(
     "#migration-action-status",
 );
+const migrationImportFile = document.querySelector("#migration-import-file");
+const migrationImportSha256 = document.querySelector(
+    "#migration-import-sha256",
+);
+const uploadMigrationButton = document.querySelector(
+    "#upload-migration-button",
+);
+const migrationRestorePanel = document.querySelector(
+    "#migration-restore-panel",
+);
+const migrationRestoreName = document.querySelector(
+    "#migration-restore-name",
+);
+const migrationRestoreConfirmation = document.querySelector(
+    "#migration-restore-confirmation",
+);
+const restoreMigrationButton = document.querySelector(
+    "#restore-migration-button",
+);
 const migrationList = document.querySelector("#migration-list");
 const migrationListEmpty = document.querySelector("#migration-list-empty");
 const refreshResourcesButton = document.querySelector(
@@ -110,6 +129,7 @@ let resourceRefreshTimer = null;
 let refreshInProgress = false;
 let backupRefreshInProgress = false;
 let migrationRefreshInProgress = false;
+let selectedMigrationName = null;
 let resourceRefreshInProgress = false;
 let powerRefreshInProgress = false;
 let alertsRefreshInProgress = false;
@@ -1174,6 +1194,15 @@ function showMigrationStatus(message, isError = false) {
     migrationActionStatus.hidden = false;
 }
 
+function stageMigrationRestore(migration) {
+    selectedMigrationName = migration.name;
+    migrationRestoreName.textContent = migration.name;
+    migrationRestoreConfirmation.value = "";
+    migrationRestorePanel.hidden = false;
+    migrationRestoreConfirmation.focus();
+    migrationRestorePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 function createMigrationRow(migration) {
     const row = document.createElement("article");
     row.className = "backup-row";
@@ -1204,7 +1233,11 @@ function createMigrationRow(migration) {
     checksum.className = "migration-download-link";
     checksum.href = `/api/admin/migrations/${encodedName}/checksum`;
     checksum.textContent = "SHA-256";
-    actions.append(download, checksum);
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.textContent = "Restaurează";
+    restore.addEventListener("click", () => stageMigrationRestore(migration));
+    actions.append(download, checksum, restore);
     row.append(information, actions);
     return row;
 }
@@ -1262,6 +1295,94 @@ async function createMigration() {
     } finally {
         createMigrationButton.disabled = false;
         createMigrationButton.textContent = "Creează arhiva";
+    }
+}
+
+async function uploadMigration() {
+    const archive = migrationImportFile.files[0];
+    if (!archive) {
+        showMigrationStatus("Selectează mai întâi arhiva portabilă.", true);
+        return;
+    }
+
+    const form = new FormData();
+    form.append("archive", archive, archive.name);
+    const checksum = migrationImportSha256.value.trim();
+    if (checksum) {
+        form.append("sha256", checksum);
+    }
+
+    uploadMigrationButton.disabled = true;
+    uploadMigrationButton.textContent = "Se încarcă...";
+    showMigrationStatus(
+        "Arhiva se încarcă și este verificată integral. Nu închide pagina.",
+    );
+    try {
+        const response = await fetch("/api/admin/migrations/imports", {
+            method: "POST",
+            headers: { Accept: "application/json" },
+            body: form,
+        });
+        const payload = await readJsonResponse(response);
+        showMigrationStatus(
+            `Arhiva ${payload.migration.name} este validă. Confirmă restaurarea mai jos.`,
+        );
+        stageMigrationRestore(payload.migration);
+        await loadMigrations();
+    } catch (error) {
+        showMigrationStatus(error.message, true);
+    } finally {
+        uploadMigrationButton.disabled = false;
+        uploadMigrationButton.textContent = "Încarcă și verifică";
+    }
+}
+
+async function restoreMigration() {
+    if (!selectedMigrationName) {
+        showMigrationStatus("Alege mai întâi arhiva de restaurat.", true);
+        return;
+    }
+    const confirmation = migrationRestoreConfirmation.value.trim();
+    if (confirmation !== selectedMigrationName) {
+        showMigrationStatus("Numele introdus nu corespunde exact arhivei.", true);
+        migrationRestoreConfirmation.focus();
+        return;
+    }
+    if (!window.confirm(
+        "Datele acestui telefon vor fi înlocuite. Backupul de siguranță se creează automat. Continui?",
+    )) {
+        return;
+    }
+
+    restoreMigrationButton.disabled = true;
+    restoreMigrationButton.textContent = "Se restaurează...";
+    showMigrationStatus(
+        "Se creează backupul de siguranță și se restaurează datele. Nu închide pagina.",
+    );
+    try {
+        const encodedName = encodeURIComponent(selectedMigrationName);
+        const response = await fetch(
+            `/api/admin/migrations/${encodedName}/restore`,
+            {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ confirmation }),
+            },
+        );
+        await readJsonResponse(response);
+        showMigrationStatus(
+            "Restaurarea s-a încheiat. Serverul repornește; pagina se va reconecta automat.",
+        );
+        window.setTimeout(() => {
+            window.location.assign("/");
+        }, 6000);
+    } catch (error) {
+        showMigrationStatus(error.message, true);
+        restoreMigrationButton.disabled = false;
+        restoreMigrationButton.textContent = "Restaurează pe acest telefon";
     }
 }
 
@@ -1445,6 +1566,8 @@ async function sendTestAlert() {
 refreshButton.addEventListener("click", loadSystemStatus);
 refreshBackupsButton.addEventListener("click", loadBackups);
 createMigrationButton.addEventListener("click", createMigration);
+uploadMigrationButton.addEventListener("click", uploadMigration);
+restoreMigrationButton.addEventListener("click", restoreMigration);
 refreshResourcesButton.addEventListener("click", loadResources);
 refreshPowerButton.addEventListener("click", loadPowerCenter);
 processSort.addEventListener("change", renderProcesses);

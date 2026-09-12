@@ -1,4 +1,6 @@
 import importlib
+import hashlib
+import io
 import os
 import sys
 import tempfile
@@ -104,6 +106,133 @@ class MigrationAdminRoutesTest(unittest.TestCase):
         fake_module.create_export.assert_called_once_with(
             archive,
             {"models": False, "media": False, "recordings": False},
+        )
+
+    def test_admin_uploads_and_verifies_portable_archive(self):
+        self.login("admin")
+        root = Path(self.temporary.name) / "migrations"
+        self.module.MIGRATION_DIR = root
+        name = "cloud-in-buzunar-migration-20260912T140000Z.tar.gz"
+        content = b"verified portable archive"
+        checksum = hashlib.sha256(content).hexdigest()
+        fake_module = Mock()
+        fake_module.verify_archive.return_value = {
+            "manifest": {
+                "created_at": "2026-09-12T14:00:00+00:00",
+                "files": [{"path": "payload/core/data"}],
+                "optional_content": {
+                    "media": False,
+                    "recordings": False,
+                    "models": False,
+                },
+            }
+        }
+
+        with patch.object(self.module, "load_migration_module", return_value=fake_module):
+            response = self.client.post(
+                "/api/admin/migrations/imports",
+                data={
+                    "archive": (io.BytesIO(content), name),
+                    "sha256": f"{checksum}  {name}",
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["status"], "verified")
+        self.assertEqual((root / name).read_bytes(), content)
+        self.assertEqual(
+            Path(f"{root / name}.sha256").read_text(encoding="utf-8"),
+            f"{checksum}  {name}\n",
+        )
+        fake_module.verify_archive.assert_called_once()
+
+    def test_upload_rejects_wrong_checksum_and_removes_temporary_file(self):
+        self.login("admin")
+        root = Path(self.temporary.name) / "migrations"
+        self.module.MIGRATION_DIR = root
+        name = "cloud-in-buzunar-migration-20260912T150000Z.tar.gz"
+
+        response = self.client.post(
+            "/api/admin/migrations/imports",
+            data={
+                "archive": (io.BytesIO(b"portable"), name),
+                "sha256": "a" * 64,
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse((root / name).exists())
+        self.assertEqual(list(root.iterdir()), [])
+
+    def test_restore_requires_exact_confirmation(self):
+        self.login("admin")
+        name = "cloud-in-buzunar-migration-20260912T160000Z.tar.gz"
+        response = self.client.post(
+            f"/api/admin/migrations/{name}/restore",
+            json={"confirmation": "wrong"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_restore_creates_safety_and_schedules_service_restart(self):
+        self.login("admin")
+        root = Path(self.temporary.name) / "migrations"
+        root.mkdir()
+        name = "cloud-in-buzunar-migration-20260912T170000Z.tar.gz"
+        archive = root / name
+        archive.write_bytes(b"portable")
+        self.module.MIGRATION_DIR = root
+        fake_module = Mock()
+        fake_module.restore_export.return_value = {
+            "safety_archive": str(root / "pre-import-safety.tar.gz"),
+            "application_safety_backup": "pre-restore.tar.gz",
+            "restored_backup": "portable-core.tar.gz",
+        }
+
+        with (
+            patch.object(self.module, "load_migration_module", return_value=fake_module),
+            patch.object(self.module, "run_service_command", return_value=True) as service,
+            patch.object(self.module, "initialize_database") as initialize,
+            patch.object(self.module, "schedule_migration_restart") as restart,
+        ):
+            response = self.client.post(
+                f"/api/admin/migrations/{name}/restore",
+                json={"confirmation": name},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with("watchdog-stop")
+        fake_module.restore_export.assert_called_once_with(
+            archive.resolve(), yes=True, confirmation=name
+        )
+        initialize.assert_called_once_with()
+        restart.assert_called_once_with()
+        self.assertTrue(response.get_json()["restart_scheduled"])
+
+    def test_failed_restore_restarts_stopped_watchdog(self):
+        self.login("admin")
+        root = Path(self.temporary.name) / "migrations"
+        root.mkdir()
+        name = "cloud-in-buzunar-migration-20260912T180000Z.tar.gz"
+        (root / name).write_bytes(b"portable")
+        self.module.MIGRATION_DIR = root
+        fake_module = Mock()
+        fake_module.restore_export.side_effect = RuntimeError("broken")
+
+        with (
+            patch.object(self.module, "load_migration_module", return_value=fake_module),
+            patch.object(self.module, "run_service_command", return_value=True) as service,
+        ):
+            response = self.client.post(
+                f"/api/admin/migrations/{name}/restore",
+                json={"confirmation": name},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            service.call_args_list,
+            [unittest.mock.call("watchdog-stop"), unittest.mock.call("watchdog-start")],
         )
 
 

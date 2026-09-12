@@ -38,6 +38,14 @@ class WatchdogScriptTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, self.script)
 
+    def test_migration_restart_restarts_web_and_watchdog(self):
+        migration_case = self.script.split("migration-restart)", 1)[1].split(";;", 1)[0]
+        self.assertIn("restart_web", migration_case)
+        self.assertIn("start_watchdog", migration_case)
+
+    def test_web_timeout_allows_large_migration_imports(self):
+        self.assertIn("--timeout 900", self.script)
+
     def test_watchdog_interval_is_bounded(self):
         self.assertIn('if [ "$configured" -lt 15 ]', self.script)
         self.assertIn('[ "$configured" -gt 3600 ]', self.script)

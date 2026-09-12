@@ -393,6 +393,11 @@ scripts/install-cloud-in-buzunar.sh \
   --import /absolute/path/to/cloud-in-buzunar-migration-TIMESTAMP.tar.gz
 ```
 
+The same operation is available without a terminal from the administrator
+**Service status** page. Upload the `.tar.gz`, optionally paste its `.sha256`
+line, wait for verification and confirm the exact archive name. The dashboard
+then restores the data and restarts the web service and watchdog automatically.
+
 Every archived file is checked against the SHA-256 manifest before extraction.
 The importer rejects traversal paths, links, duplicate entries and unexpected
 files, asks for exact confirmation and creates safety backups before replacing
