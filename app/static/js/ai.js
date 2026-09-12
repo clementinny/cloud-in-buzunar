@@ -26,6 +26,7 @@ let currentUser = null;
 let messages = [];
 let requestIsRunning = false;
 let activeModelMode = null;
+let aiOnline = false;
 
 
 async function readJsonResponse(response) {
@@ -119,7 +120,9 @@ function setBusyState(isBusy) {
 
     if (isBusy) {
         generationStatus.textContent =
-            "Qwen generează răspunsul...";
+            aiOnline
+                ? "Qwen generează răspunsul..."
+                : "Modelul pornește, apoi va genera răspunsul...";
         generationStatus.hidden = false;
     } else {
         generationStatus.hidden =
@@ -132,7 +135,10 @@ function updateModelSwitchButton() {
     modelSwitchButton.disabled =
         requestIsRunning
         || !modelSelect.value
-        || modelSelect.value === activeModelMode;
+        || (
+            modelSelect.value === activeModelMode
+            && aiOnline
+        );
 }
 
 
@@ -141,9 +147,18 @@ async function loadAiStatus() {
     const data = await readJsonResponse(response);
 
     activeModelMode = data.mode;
-    aiStatus.textContent = data.online
-        ? `${data.model} · online`
-        : `${data.model} · indisponibil`;
+    aiOnline = data.online;
+    if (data.online) {
+        const timeout = Number(data.idle_timeout_minutes ?? 0);
+        aiStatus.textContent = timeout > 0
+            ? `${data.model} · online · repaus automat după ${timeout} min`
+            : `${data.model} · online`;
+    } else if (data.sleeping && data.auto_start) {
+        aiStatus.textContent =
+            `${data.model} · în repaus · pornește automat la următorul mesaj`;
+    } else {
+        aiStatus.textContent = `${data.model} · indisponibil`;
+    }
 
     modelControls.hidden = !data.can_manage;
 
@@ -177,7 +192,10 @@ modelSwitchButton.addEventListener("click", async () => {
     if (
         requestIsRunning
         || !requestedMode
-        || requestedMode === activeModelMode
+        || (
+            requestedMode === activeModelMode
+            && aiOnline
+        )
     ) {
         return;
     }
@@ -220,6 +238,7 @@ modelSwitchButton.addEventListener("click", async () => {
         const data = await readJsonResponse(response);
 
         activeModelMode = data.mode;
+        aiOnline = data.online;
         modelMessage.textContent =
             `${data.model} este pregătit.`;
         await loadAiStatus();
@@ -287,6 +306,7 @@ aiForm.addEventListener("submit", async (event) => {
             ? `Răspuns generat cu ${speed.toFixed(1)} tokeni/s`
             : "Răspuns generat local";
         generationStatus.hidden = false;
+        await loadAiStatus();
     } catch (error) {
         generationStatus.textContent = "";
         aiError.textContent = error.message;

@@ -115,6 +115,8 @@ Available operations include:
 - Qwen2.5 1.5B rapid mode
 - Qwen2.5 3B quality mode
 - Runtime model switching from the dashboard
+- Automatic startup when a chat message arrives
+- Automatic model unload after 15 idle minutes to release RAM
 - Persistent SQLite conversation history
 - Separate conversation history for every user
 - No external AI API required
@@ -447,6 +449,12 @@ it later with:
 ```bash
 scripts/install-termux-autostart.sh --with-ai
 ```
+
+With the recommended `--without-ai` mode, the selected model starts
+automatically when a user sends a chat message and unloads after 15 minutes
+without activity. Change `AI_IDLE_TIMEOUT_MINUTES` in
+`~/cloud-in-buzunar-data/autostart.conf`; use `0` to disable automatic unload.
+The `--with-ai` mode keeps the model continuously supervised instead.
 
 Inspect the current state and logs with:
 

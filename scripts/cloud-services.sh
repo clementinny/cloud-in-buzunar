@@ -19,6 +19,7 @@ WATCHDOG_LOG="$LOG_DIR/cloud-watchdog.log"
 BACKUP_LOG="$LOG_DIR/backup.log"
 THERMAL_LOG="$LOG_DIR/thermal-guardian.log"
 WEB_WATCHER_LOG="$LOG_DIR/web-watchers.log"
+AI_IDLE_LOG="$LOG_DIR/ai-idle.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
 
@@ -151,6 +152,13 @@ run_thermal_guardian_check() {
     log_message WARN \
         "Verificarea termică și salvarea istoricului au eșuat; vezi $THERMAL_LOG."
     return 1
+}
+
+
+run_ai_idle_check() {
+    [ -x "$PYTHON" ] || return 1
+    cd "$PROJECT_DIR" || return 1
+    "$PYTHON" -m app.ai_runtime idle-check >> "$AI_IDLE_LOG" 2>&1
 }
 
 
@@ -724,6 +732,10 @@ run_watchdog() {
         fi
 
         run_thermal_guardian_check
+
+        if [ "$START_AI" != true ]; then
+            run_ai_idle_check || true
+        fi
 
         if [ "$START_ARIA2" = true ] \
             && ! thermal_service_is_suspended aria2; then

@@ -10,6 +10,7 @@ BOOT_DIR="$HOME/.termux/boot"
 BOOT_SCRIPT="$BOOT_DIR/20-cloud-in-buzunar"
 MANAGER="$PROJECT_DIR/scripts/cloud-services.sh"
 START_AI=false
+AI_IDLE_TIMEOUT_MINUTES=15
 
 if [ "${1:-}" = "--with-ai" ]; then
     START_AI=true
@@ -36,6 +37,7 @@ START_WEB=true
 START_ARIA2=true
 START_TRANSMISSION=true
 START_AI=$START_AI
+AI_IDLE_TIMEOUT_MINUTES=15
 START_HTTPS=false
 BACKUP_ENABLED=true
 BACKUP_KEEP=3
@@ -48,6 +50,11 @@ else
         sed -i "s/^START_AI=.*/START_AI=$START_AI/" "$CONFIG_FILE"
     else
         printf 'START_AI=%s\n' "$START_AI" >> "$CONFIG_FILE"
+    fi
+
+    if ! grep -q '^AI_IDLE_TIMEOUT_MINUTES=' "$CONFIG_FILE"; then
+        printf 'AI_IDLE_TIMEOUT_MINUTES=%s\n' \
+            "$AI_IDLE_TIMEOUT_MINUTES" >> "$CONFIG_FILE"
     fi
 fi
 

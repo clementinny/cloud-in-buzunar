@@ -5,6 +5,7 @@ import signal
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -16,12 +17,16 @@ AI_DATA_DIR = DATA_DIR / "ai"
 LOG_DIR = DATA_DIR / "logs"
 MODE_FILE = AI_DATA_DIR / "model-mode"
 PID_FILE = AI_DATA_DIR / "llama-server.pid"
+ACTIVITY_FILE = AI_DATA_DIR / "last-activity"
+AUTOSTART_CONFIG_FILE = DATA_DIR / "autostart.conf"
 LOG_FILE = LOG_DIR / "llama-server.log"
 
 LLAMA_SERVER = Path(
     "/data/data/com.termux/files/usr/bin/llama-server"
 )
 LLAMA_HEALTH_URL = "http://127.0.0.1:8081/health"
+DEFAULT_IDLE_TIMEOUT_MINUTES = 15
+MAX_IDLE_TIMEOUT_MINUTES = 24 * 60
 
 MODEL_PROFILES = {
     "rapid": {
@@ -71,6 +76,58 @@ def get_model_path(mode):
         raise AiRuntimeError("Unknown AI mode") from error
 
     return MODEL_DIR / profile["filename"]
+
+
+def get_idle_timeout_minutes():
+    configured = None
+    try:
+        lines = AUTOSTART_CONFIG_FILE.read_text(
+            encoding="utf-8"
+        ).splitlines()
+    except (FileNotFoundError, OSError):
+        lines = []
+
+    for line in lines:
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        if name.strip() == "AI_IDLE_TIMEOUT_MINUTES":
+            configured = value.strip()
+
+    try:
+        minutes = int(configured)
+    except (TypeError, ValueError):
+        return DEFAULT_IDLE_TIMEOUT_MINUTES
+
+    if minutes == 0:
+        return 0
+    if 1 <= minutes <= MAX_IDLE_TIMEOUT_MINUTES:
+        return minutes
+    return DEFAULT_IDLE_TIMEOUT_MINUTES
+
+
+def mark_ai_activity(timestamp=None):
+    ensure_directories()
+    value = time.time() if timestamp is None else float(timestamp)
+    temporary = ACTIVITY_FILE.with_name(
+        f".{ACTIVITY_FILE.name}.{os.getpid()}.{threading.get_ident()}"
+    )
+    temporary.write_text(f"{value:.6f}\n", encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(ACTIVITY_FILE)
+    return value
+
+
+def get_last_activity_timestamp():
+    try:
+        value = float(
+            ACTIVITY_FILE.read_text(encoding="utf-8").strip()
+        )
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    return value
 
 
 def get_server_pids():
@@ -159,12 +216,31 @@ def is_healthy(timeout=2):
 def get_runtime_status():
     profile = get_active_profile()
     pids = get_server_pids()
+    online = bool(pids) and is_healthy()
+    last_activity = get_last_activity_timestamp()
+    timeout_minutes = get_idle_timeout_minutes()
+    model_available = get_model_path(profile["mode"]).is_file()
+    idle_seconds = None
+    if online and last_activity is not None and timeout_minutes > 0:
+        idle_seconds = max(0, int(time.time() - last_activity))
 
     return {
-        "online": bool(pids) and is_healthy(),
+        "online": online,
+        "sleeping": not pids and model_available,
+        "auto_start": model_available,
         "mode": profile["mode"],
         "model": profile["label"],
         "pid": pids[0] if pids else None,
+        "idle_timeout_minutes": timeout_minutes,
+        "idle_seconds": idle_seconds,
+        "last_activity_at": (
+            datetime.fromtimestamp(
+                last_activity,
+                tz=timezone.utc,
+            ).isoformat()
+            if last_activity is not None
+            else None
+        ),
     }
 
 
@@ -248,6 +324,7 @@ def start_server(mode, timeout=60):
             )
 
         if is_healthy():
+            mark_ai_activity()
             return process.pid
 
         time.sleep(0.5)
@@ -322,6 +399,7 @@ def start_selected_model():
     ensure_directories()
 
     if get_server_pids() and is_healthy():
+        mark_ai_activity()
         return get_runtime_status()
 
     if get_server_pids():
@@ -333,6 +411,65 @@ def start_selected_model():
     return get_runtime_status()
 
 
+def stop_server_if_idle(now=None):
+    timeout_minutes = get_idle_timeout_minutes()
+    if timeout_minutes == 0:
+        return {
+            "action": "disabled",
+            "idle_timeout_minutes": 0,
+        }
+
+    pids = get_server_pids()
+    if not pids:
+        return {
+            "action": "already-stopped",
+            "idle_timeout_minutes": timeout_minutes,
+        }
+    if not is_healthy():
+        return {
+            "action": "unhealthy",
+            "idle_timeout_minutes": timeout_minutes,
+        }
+
+    current_time = time.time() if now is None else float(now)
+    last_activity = get_last_activity_timestamp()
+    if last_activity is None:
+        mark_ai_activity(current_time)
+        return {
+            "action": "initialized",
+            "idle_timeout_minutes": timeout_minutes,
+        }
+
+    idle_seconds = max(0, current_time - last_activity)
+    if idle_seconds < timeout_minutes * 60:
+        return {
+            "action": "active",
+            "idle_timeout_minutes": timeout_minutes,
+            "idle_seconds": int(idle_seconds),
+        }
+
+    with SWITCH_LOCK:
+        latest_activity = get_last_activity_timestamp()
+        if (
+            latest_activity is not None
+            and current_time - latest_activity < timeout_minutes * 60
+        ):
+            return {
+                "action": "active",
+                "idle_timeout_minutes": timeout_minutes,
+                "idle_seconds": int(
+                    max(0, current_time - latest_activity)
+                ),
+            }
+        stop_server()
+
+    return {
+        "action": "stopped",
+        "idle_timeout_minutes": timeout_minutes,
+        "idle_seconds": int(idle_seconds),
+    }
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Manage the CloudInBuzunar AI model",
@@ -342,6 +479,7 @@ def build_parser():
     commands.add_parser("start")
     commands.add_parser("stop")
     commands.add_parser("status")
+    commands.add_parser("idle-check")
 
     switch_parser = commands.add_parser("switch")
     switch_parser.add_argument(
@@ -364,6 +502,8 @@ def main():
             result = get_runtime_status()
         elif arguments.command == "status":
             result = get_runtime_status()
+        elif arguments.command == "idle-check":
+            result = stop_server_if_idle()
         elif arguments.command == "switch":
             result = switch_model(arguments.mode)
         else:

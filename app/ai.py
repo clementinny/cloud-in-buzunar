@@ -22,6 +22,8 @@ from app.ai_runtime import (
     MODEL_PROFILES,
     get_active_profile,
     get_runtime_status,
+    mark_ai_activity,
+    start_selected_model,
     switch_model,
 )
 
@@ -272,6 +274,14 @@ def ai_chat():
             {"error": str(error)}
         ), 400
 
+    try:
+        mark_ai_activity()
+        start_selected_model()
+    except AiRuntimeError as error:
+        return jsonify(
+            {"error": f"Modelul AI nu a putut porni: {error}"}
+        ), 503
+
     append_ai_message(
         user["id"],
         "user",
@@ -339,6 +349,7 @@ def ai_chat():
         "assistant",
         content,
     )
+    mark_ai_activity()
 
     usage = result.get("usage") or {}
     timings = result.get("timings") or {}

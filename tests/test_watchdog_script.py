@@ -69,6 +69,11 @@ class WatchdogScriptTests(unittest.TestCase):
         )
         self.assertNotIn("ALERT_CHECK_INTERVAL_SECONDS", self.script)
 
+    def test_watchdog_suspends_idle_ai_when_not_always_on(self):
+        self.assertIn("run_ai_idle_check", self.script)
+        self.assertIn('if [ "$START_AI" != true ]', self.script)
+        self.assertIn("-m app.ai_runtime idle-check", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()
