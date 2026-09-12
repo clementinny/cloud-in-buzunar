@@ -225,6 +225,23 @@
                 android:background="@drawable/field_background"
                 android:popupBackground="@color/surface_light" />
 
+            <CheckBox
+                android:id="@+id/motionAlertEnabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:buttonTint="@color/accent"
+                android:text="Anunță dacă telefonul este mutat"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Accelerometrul este urmărit numai cât timp sursa este armată. Alertele repetate sunt limitate."
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
             <Button
                 android:id="@+id/armButton"
                 android:layout_width="match_parent"

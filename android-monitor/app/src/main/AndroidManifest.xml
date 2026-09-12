@@ -19,6 +19,9 @@
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="true" />
+    <uses-feature
+        android:name="android.hardware.sensor.accelerometer"
+        android:required="false" />
 
     <application
         android:name=".MonitorApplication"

@@ -13,6 +13,7 @@ import android.provider.Settings;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
@@ -40,6 +41,7 @@ public final class MainActivity extends Activity {
     private Button serverWatchStartButton;
     private Button serverWatchStopButton;
     private Spinner cameraFacingSpinner;
+    private CheckBox motionAlertEnabled;
     private Spinner serverPollIntervalSpinner;
     private Spinner serverFailureThresholdSpinner;
     private EditText serverUrlInput;
@@ -98,6 +100,7 @@ public final class MainActivity extends Activity {
             R.id.serverWatchStopButton
         );
         cameraFacingSpinner = findViewById(R.id.cameraFacingSpinner);
+        motionAlertEnabled = findViewById(R.id.motionAlertEnabled);
         serverPollIntervalSpinner = findViewById(
             R.id.serverPollIntervalSpinner
         );
@@ -125,6 +128,9 @@ public final class MainActivity extends Activity {
         cameraFacingSpinner.setAdapter(cameraAdapter);
         cameraFacingSpinner.setSelection(
             "user".equals(MonitorStateStore.cameraFacing(this)) ? 1 : 0
+        );
+        motionAlertEnabled.setChecked(
+            MonitorStateStore.motionAlertEnabled(this)
         );
         configureServerWatchControls();
 
@@ -356,7 +362,11 @@ public final class MainActivity extends Activity {
             : "user";
         Intent serviceIntent = new Intent(this, MonitorService.class)
             .setAction(MonitorService.ACTION_ARM)
-            .putExtra(MonitorService.EXTRA_CAMERA_FACING, facing);
+            .putExtra(MonitorService.EXTRA_CAMERA_FACING, facing)
+            .putExtra(
+                MonitorService.EXTRA_MOTION_ALERT_ENABLED,
+                motionAlertEnabled.isChecked()
+            );
         startForegroundService(serviceIntent);
         startServerWatch();
         updateServiceState("starting", "Se pornește serviciul...");
@@ -479,6 +489,7 @@ public final class MainActivity extends Activity {
         armButton.setEnabled(!running);
         disarmButton.setEnabled(running);
         cameraFacingSpinner.setEnabled(!running);
+        motionAlertEnabled.setEnabled(!running);
 
         String label;
 

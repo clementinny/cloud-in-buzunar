@@ -10,6 +10,7 @@ final class MonitorStateStore {
     private static final String RECORDING_CAMERA_FACING =
         "recording_camera_facing";
     private static final String RECORDING_MODE = "recording_mode";
+    private static final String MOTION_ALERT_ENABLED = "motion_alert_enabled";
 
     private MonitorStateStore() {}
 
@@ -25,7 +26,11 @@ final class MonitorStateStore {
         return "user".equals(facing) ? "user" : "environment";
     }
 
-    static void arm(Context context, String cameraFacing) {
+    static void arm(
+        Context context,
+        String cameraFacing,
+        boolean motionAlertEnabled
+    ) {
         preferences(context)
             .edit()
             .putBoolean(ARMED, true)
@@ -33,7 +38,12 @@ final class MonitorStateStore {
                 CAMERA_FACING,
                 "user".equals(cameraFacing) ? "user" : "environment"
             )
+            .putBoolean(MOTION_ALERT_ENABLED, motionAlertEnabled)
             .apply();
+    }
+
+    static boolean motionAlertEnabled(Context context) {
+        return preferences(context).getBoolean(MOTION_ALERT_ENABLED, false);
     }
 
     static void updateCameraFacing(Context context, String cameraFacing) {

@@ -471,6 +471,33 @@ def system_alert_feed_ack_api():
     return jsonify({"acknowledged": acknowledged})
 
 
+@reliability_alerts_blueprint.post("/api/system/alerts/device-event")
+@require_alert_device
+def system_alert_device_event_api():
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict) or set(payload) != {"type", "score"}:
+        return jsonify({"error": "Evenimentul dispozitivului este invalid."}), 400
+
+    if payload["type"] != "movement":
+        return jsonify({"error": "Tipul evenimentului nu este acceptat."}), 400
+
+    score = payload["score"]
+    if type(score) not in (int, float) or not 0 <= score <= 50:
+        return jsonify({"error": "Intensitatea mișcării este invalidă."}), 400
+
+    device = g.alert_device
+    condition = alert_condition(
+        f"device:{device['id']}:movement",
+        "device",
+        "warning",
+        "Telefonul monitor a fost mișcat",
+        f"{device['device_name']} a detectat mutarea de pe poziția stabilă.",
+    )
+    event_id = record_system_alert_event(condition, event_type="movement")
+    return jsonify({"id": event_id, **condition}), 201
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Check CloudInBuzunar reliability alerts"

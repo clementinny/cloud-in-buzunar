@@ -261,6 +261,41 @@ class ReliabilityAlertTest(unittest.TestCase):
             401,
         )
 
+    def test_paired_device_can_report_movement(self):
+        token = "movement-device-token"
+        code_hash = hashlib.sha256(b"movement-code").hexdigest()
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        self.database.create_monitor_pairing_code(code_hash, self.admin_id)
+        device = self.database.consume_monitor_pairing_code(
+            code_hash,
+            "A70 server",
+            token_hash,
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = self.client.post(
+            "/api/system/alerts/device-event",
+            headers=headers,
+            json={"type": "movement", "score": 3.4},
+        )
+
+        self.assertIsNotNone(device)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["category"], "device")
+        self.assertEqual(
+            self.database.list_system_alert_events()[0]["event_type"],
+            "movement",
+        )
+
+    def test_movement_event_requires_valid_device_and_score(self):
+        self.assertEqual(
+            self.client.post(
+                "/api/system/alerts/device-event",
+                json={"type": "movement", "score": 3.0},
+            ).status_code,
+            401,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

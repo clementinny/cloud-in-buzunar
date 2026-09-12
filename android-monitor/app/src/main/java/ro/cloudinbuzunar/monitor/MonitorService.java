@@ -10,6 +10,10 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.MediaRecorder;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -56,6 +60,7 @@ public final class MonitorService extends Service {
     static final String STATUS_ACTION = "ro.cloudinbuzunar.monitor.STATUS";
     static final String QUERY_ACTION = "ro.cloudinbuzunar.monitor.QUERY";
     static final String EXTRA_CAMERA_FACING = "camera_facing";
+    static final String EXTRA_MOTION_ALERT_ENABLED = "motion_alert_enabled";
     static final String EXTRA_STATE = "state";
     static final String EXTRA_MESSAGE = "message";
 
@@ -78,6 +83,7 @@ public final class MonitorService extends Service {
     private volatile String errorMessage;
     private volatile boolean armed;
     private volatile boolean captureStarting;
+    private volatile boolean motionAlertEnabled;
     private long lastHeartbeatAt;
 
     private PowerManager.WakeLock wakeLock;
@@ -103,6 +109,29 @@ public final class MonitorService extends Service {
     private String desiredRecordingMode = "off";
     private String actualRecordingMode = "off";
     private ScheduledFuture<?> recordingRotation;
+    private SensorManager sensorManager;
+    private Sensor accelerometer;
+    private MotionDetector motionDetector;
+    private final SensorEventListener motionSensorListener =
+        new SensorEventListener() {
+            @Override
+            public void onSensorChanged(SensorEvent event) {
+                if (event.values.length < 3) {
+                    return;
+                }
+                handleMotionSample(
+                    event.values[0],
+                    event.values[1],
+                    event.values[2],
+                    event.timestamp / 1_000_000L
+                );
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int accuracy) {
+                // The detector tolerates normal accelerometer noise.
+            }
+        };
 
     @Override
     public void onCreate() {
@@ -133,6 +162,8 @@ public final class MonitorService extends Service {
 
             if (!armed) {
                 cameraFacing = MonitorStateStore.cameraFacing(this);
+                motionAlertEnabled =
+                    MonitorStateStore.motionAlertEnabled(this);
                 recordingCameraFacing =
                     MonitorStateStore.recordingCameraFacing(this);
                 startAsForeground(
@@ -150,8 +181,20 @@ public final class MonitorService extends Service {
             cameraFacing = "environment";
         }
 
-        MonitorStateStore.arm(this, cameraFacing);
-        startAsForeground("Armat · camera și microfonul sunt oprite");
+        motionAlertEnabled = intent.getBooleanExtra(
+            EXTRA_MOTION_ALERT_ENABLED,
+            false
+        );
+        MonitorStateStore.arm(
+            this,
+            cameraFacing,
+            motionAlertEnabled
+        );
+        startAsForeground(
+            motionAlertEnabled
+                ? "Armat · detectarea mișcării este activă"
+                : "Armat · camera și microfonul sunt oprite"
+        );
         executor.execute(this::armOnServer);
         return START_STICKY;
     }
@@ -164,6 +207,7 @@ public final class MonitorService extends Service {
     @Override
     public void onDestroy() {
         armed = false;
+        stopMotionDetection();
         stopLocalRecording(false);
         cleanupCapture();
         releaseLocks();
@@ -198,10 +242,13 @@ public final class MonitorService extends Service {
             state = "armed";
             errorMessage = null;
             acquireWakeLock();
+            startMotionDetection();
             uploadPendingRecordings();
             publishState(
                 "armed",
-                "Așteaptă comanda din dashboard. Ecranul poate fi stins."
+                motionAlertEnabled
+                    ? "Armat · telefonul va anunța dacă este mutat."
+                    : "Așteaptă comanda din dashboard. Ecranul poate fi stins."
             );
             executor.scheduleWithFixedDelay(
                 this::pollSafely,
@@ -778,6 +825,7 @@ public final class MonitorService extends Service {
     private void disarmAndStop() {
         MonitorStateStore.disarm(this);
         armed = false;
+        stopMotionDetection();
         desiredRecordingMode = "off";
         stopLocalRecording(true);
         cleanupCapture();
@@ -1111,6 +1159,70 @@ public final class MonitorService extends Service {
         wakeLock = null;
     }
 
+    private void startMotionDetection() {
+        stopMotionDetection();
+        if (!motionAlertEnabled) {
+            return;
+        }
+
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        accelerometer = sensorManager == null
+            ? null
+            : sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+
+        if (accelerometer == null) {
+            Log.w(LOG_TAG, "Accelerometer unavailable; movement alerts disabled");
+            motionAlertEnabled = false;
+            return;
+        }
+
+        motionDetector = new MotionDetector();
+        if (!sensorManager.registerListener(
+            motionSensorListener,
+            accelerometer,
+            SensorManager.SENSOR_DELAY_NORMAL
+        )) {
+            Log.w(LOG_TAG, "Could not register accelerometer listener");
+            stopMotionDetection();
+        }
+    }
+
+    private void stopMotionDetection() {
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(motionSensorListener);
+        }
+        sensorManager = null;
+        accelerometer = null;
+        motionDetector = null;
+    }
+
+    private void handleMotionSample(
+        float x,
+        float y,
+        float z,
+        long nowMillis
+    ) {
+        MotionDetector detector = motionDetector;
+        if (!armed || !motionAlertEnabled || detector == null || api == null) {
+            return;
+        }
+
+        float score = detector.sample(x, y, z, nowMillis);
+        if (Float.isNaN(score)) {
+            return;
+        }
+
+        publishState(state, "Mișcare detectată · alerta a fost trimisă.");
+        ApiClient currentApi = api;
+        executor.execute(() -> {
+            try {
+                currentApi.reportMovement(score);
+            } catch (Exception error) {
+                Log.w(LOG_TAG, "Movement alert could not be sent", error);
+            }
+        });
+    }
+
     private void releaseWifiLock() {
         if (wifiLock != null && wifiLock.isHeld()) {
             wifiLock.release();
@@ -1131,6 +1243,7 @@ public final class MonitorService extends Service {
         errorMessage = message;
         publishState("error", message);
         armed = false;
+        stopMotionDetection();
         desiredRecordingMode = "off";
         stopLocalRecording(false);
         cleanupCapture();

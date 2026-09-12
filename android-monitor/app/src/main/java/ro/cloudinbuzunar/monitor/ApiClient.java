@@ -67,6 +67,16 @@ final class ApiClient {
         );
     }
 
+    void reportMovement(float score) throws Exception {
+        authenticatedRequest(
+            "POST",
+            "/api/system/alerts/device-event",
+            new JSONObject()
+                .put("type", "movement")
+                .put("score", score)
+        );
+    }
+
     JSONObject arm(String sourceId, String cameraFacing) throws Exception {
         return authenticatedRequest(
             "POST",
