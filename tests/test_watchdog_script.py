@@ -16,6 +16,9 @@ class WatchdogScriptTests(unittest.TestCase):
         self.assertIn('"$SCRIPT_PATH" watchdog', self.script)
         self.assertNotIn('nohup "$0" watchdog', self.script)
 
+    def test_watchdog_exits_after_stop_signal(self):
+        self.assertIn("trap 'exit 0' INT TERM", self.script)
+
     def test_watchdog_initializes_database_before_starting(self):
         self.assertIn(
             "from app.database import initialize_database; "

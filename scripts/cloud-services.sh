@@ -641,7 +641,8 @@ run_watchdog() {
 
     printf '%s\n' "$$" > "$WATCHDOG_PID_FILE"
     chmod 600 "$WATCHDOG_PID_FILE"
-    trap 'rm -f "$WATCHDOG_PID_FILE" "$WATCHDOG_HEARTBEAT_FILE"' EXIT INT TERM
+    trap 'rm -f "$WATCHDOG_PID_FILE" "$WATCHDOG_HEARTBEAT_FILE"' EXIT
+    trap 'exit 0' INT TERM
 
     local web_failures=0
     local aria_failures=0
