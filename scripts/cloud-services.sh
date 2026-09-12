@@ -68,6 +68,17 @@ process_matches() {
 }
 
 
+terminate_child_processes() {
+    local parent_id="$1"
+    local child_id
+
+    for child_id in $(pgrep -P "$parent_id" 2>/dev/null || true); do
+        terminate_child_processes "$child_id"
+        kill "$child_id" 2>/dev/null || true
+    done
+}
+
+
 port_responds() {
     local port="$1"
 
@@ -617,6 +628,7 @@ stop_watchdog() {
     fi
 
     kill "$process_id" 2>/dev/null || true
+    terminate_child_processes "$process_id"
 
     for attempt in 1 2 3 4 5; do
         if ! kill -0 "$process_id" 2>/dev/null; then
@@ -756,7 +768,8 @@ run_watchdog() {
             last_backup_check="$current_time"
         fi
 
-        sleep "$watchdog_interval"
+        sleep "$watchdog_interval" &
+        wait "$!" || true
     done
 }
 

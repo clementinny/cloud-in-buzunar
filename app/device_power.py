@@ -256,6 +256,15 @@ def collect_battery_health(root_output=None, root_available=None):
             termux.get("current", termux.get("current_average"))
         )
 
+    status = values.get("status") or termux.get("status")
+    plugged = values.get("plugged") or termux.get("plugged")
+
+    if (
+        plugged == "UNPLUGGED"
+        and str(status).strip().lower() in {"charging", "full"}
+    ):
+        plugged = "PLUGGED"
+
     health_percent = None
 
     health_source = None
@@ -318,8 +327,8 @@ def collect_battery_health(root_output=None, root_available=None):
         "root_available": root_available,
         "percentage": int(percentage) if percentage is not None else None,
         "temperature_c": temperature,
-        "status": values.get("status") or termux.get("status"),
-        "plugged": values.get("plugged") or termux.get("plugged"),
+        "status": status,
+        "plugged": plugged,
         "health": values.get("health") or termux.get("health"),
         "technology": values.get("technology") or termux.get("technology"),
         "voltage_v": voltage,

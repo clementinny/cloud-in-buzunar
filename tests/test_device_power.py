@@ -106,6 +106,25 @@ limit_samsung=85
         termux_status.assert_not_called()
         self.assertEqual(result["plugged"], "PLUGGED_AC")
 
+    def test_charging_status_overrides_false_unplugged_driver_value(self):
+        root_output = "\n".join(
+            (
+                "capacity=98",
+                "temp=340",
+                "status=Charging",
+                "voltage_now=4245000",
+                "current_now=0",
+                "plugged=UNPLUGGED",
+            )
+        )
+
+        result = device_power.collect_battery_health(
+            root_output=root_output,
+            root_available=True,
+        )
+
+        self.assertEqual(result["plugged"], "PLUGGED")
+
     def test_thermal_sensors_are_normalized(self):
         sensors = device_power.parse_thermal_sensors(
             "sensor|battery|35400\nsensor|gpu-therm|61250\ninvalid\n"

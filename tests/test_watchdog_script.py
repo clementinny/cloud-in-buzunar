@@ -18,6 +18,8 @@ class WatchdogScriptTests(unittest.TestCase):
 
     def test_watchdog_exits_after_stop_signal(self):
         self.assertIn("trap 'exit 0' INT TERM", self.script)
+        self.assertIn('terminate_child_processes "$process_id"', self.script)
+        self.assertIn('wait "$!" || true', self.script)
 
     def test_watchdog_initializes_database_before_starting(self):
         self.assertIn(
