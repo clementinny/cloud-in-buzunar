@@ -473,6 +473,74 @@
     color: var(--muted);
 }
 
+.migration-export-panel {
+    display: grid;
+    gap: 14px;
+    margin: 22px 0;
+    padding: 18px;
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    border-radius: 14px;
+    background: rgba(139, 92, 246, 0.06);
+}
+
+.migration-export-panel h3,
+.migration-export-panel p {
+    margin: 0;
+}
+
+.migration-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.migration-options label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.migration-options button {
+    margin-left: auto;
+}
+
+.migration-size-warning {
+    color: #94a3b8;
+    font-size: 0.9rem;
+}
+
+#migration-action-status.is-success {
+    color: #4ade80;
+}
+
+#migration-action-status.is-error {
+    color: #fca5a5;
+}
+
+.migration-download-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid rgba(139, 92, 246, 0.65);
+    border-radius: 10px;
+    color: #f8fafc;
+    text-decoration: none;
+}
+
+@media (max-width: 720px) {
+    .migration-options,
+    .migration-options button {
+        width: 100%;
+    }
+
+    .migration-options button {
+        margin-left: 0;
+    }
+}
+
 .status-section-label {
     color: var(--accent-light);
     font-size: 0.76rem;

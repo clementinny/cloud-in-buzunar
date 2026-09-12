@@ -13,6 +13,23 @@ const backupActionStatus = document.querySelector(
 );
 const backupList = document.querySelector("#backup-list");
 const backupListEmpty = document.querySelector("#backup-list-empty");
+const createMigrationButton = document.querySelector(
+    "#create-migration-button",
+);
+const migrationIncludeMedia = document.querySelector(
+    "#migration-include-media",
+);
+const migrationIncludeRecordings = document.querySelector(
+    "#migration-include-recordings",
+);
+const migrationIncludeModels = document.querySelector(
+    "#migration-include-models",
+);
+const migrationActionStatus = document.querySelector(
+    "#migration-action-status",
+);
+const migrationList = document.querySelector("#migration-list");
+const migrationListEmpty = document.querySelector("#migration-list-empty");
 const refreshResourcesButton = document.querySelector(
     "#refresh-resources-button",
 );
@@ -92,6 +109,7 @@ let refreshTimer = null;
 let resourceRefreshTimer = null;
 let refreshInProgress = false;
 let backupRefreshInProgress = false;
+let migrationRefreshInProgress = false;
 let resourceRefreshInProgress = false;
 let powerRefreshInProgress = false;
 let alertsRefreshInProgress = false;
@@ -1150,6 +1168,103 @@ async function loadBackups() {
     }
 }
 
+function showMigrationStatus(message, isError = false) {
+    migrationActionStatus.textContent = message;
+    migrationActionStatus.className = isError ? "is-error" : "is-success";
+    migrationActionStatus.hidden = false;
+}
+
+function createMigrationRow(migration) {
+    const row = document.createElement("article");
+    row.className = "backup-row";
+
+    const information = document.createElement("div");
+    information.className = "backup-information";
+    const name = document.createElement("h3");
+    name.textContent = migration.name;
+    const metadata = document.createElement("p");
+    metadata.className = "backup-metadata";
+    metadata.textContent = [
+        formatBackupDate(migration.created_at),
+        formatBytes(migration.size_bytes),
+        migration.sha256
+            ? `SHA-256: ${migration.sha256.slice(0, 12)}…`
+            : "Checksum lipsă",
+    ].join(" · ");
+    information.append(name, metadata);
+
+    const actions = document.createElement("div");
+    actions.className = "backup-actions";
+    const encodedName = encodeURIComponent(migration.name);
+    const download = document.createElement("a");
+    download.className = "migration-download-link";
+    download.href = `/api/admin/migrations/${encodedName}/download`;
+    download.textContent = "Descarcă";
+    const checksum = document.createElement("a");
+    checksum.className = "migration-download-link";
+    checksum.href = `/api/admin/migrations/${encodedName}/checksum`;
+    checksum.textContent = "SHA-256";
+    actions.append(download, checksum);
+    row.append(information, actions);
+    return row;
+}
+
+async function loadMigrations() {
+    if (migrationRefreshInProgress) {
+        return;
+    }
+    migrationRefreshInProgress = true;
+    try {
+        const response = await fetch("/api/admin/migrations", {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+        });
+        const payload = await readJsonResponse(response);
+        const migrations = Array.isArray(payload.migrations)
+            ? payload.migrations
+            : [];
+        migrationList.replaceChildren(...migrations.map(createMigrationRow));
+        migrationListEmpty.hidden = migrations.length !== 0;
+    } catch (error) {
+        migrationList.replaceChildren();
+        migrationListEmpty.hidden = true;
+        showMigrationStatus(error.message, true);
+    } finally {
+        migrationRefreshInProgress = false;
+    }
+}
+
+async function createMigration() {
+    createMigrationButton.disabled = true;
+    createMigrationButton.textContent = "Se creează...";
+    showMigrationStatus("Se creează și se verifică arhiva portabilă...");
+
+    try {
+        const response = await fetch("/api/admin/migrations", {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                media: migrationIncludeMedia.checked,
+                recordings: migrationIncludeRecordings.checked,
+                models: migrationIncludeModels.checked,
+            }),
+        });
+        const payload = await readJsonResponse(response);
+        showMigrationStatus(
+            `Arhiva ${payload.migration.name} a fost creată și verificată.`,
+        );
+        await loadMigrations();
+    } catch (error) {
+        showMigrationStatus(error.message, true);
+    } finally {
+        createMigrationButton.disabled = false;
+        createMigrationButton.textContent = "Creează arhiva";
+    }
+}
+
 function showAlertsMessage(message, isError = false) {
     alertsMessage.textContent = message;
     alertsMessage.className = isError ? "is-error" : "";
@@ -1329,6 +1444,7 @@ async function sendTestAlert() {
 
 refreshButton.addEventListener("click", loadSystemStatus);
 refreshBackupsButton.addEventListener("click", loadBackups);
+createMigrationButton.addEventListener("click", createMigration);
 refreshResourcesButton.addEventListener("click", loadResources);
 refreshPowerButton.addEventListener("click", loadPowerCenter);
 processSort.addEventListener("change", renderProcesses);
@@ -1352,6 +1468,7 @@ window.addEventListener("pagehide", () => {
 
 loadSystemStatus();
 loadBackups();
+loadMigrations();
 loadResources();
 loadPowerCenter();
 loadAlerts();

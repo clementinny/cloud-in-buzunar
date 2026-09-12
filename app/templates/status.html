@@ -375,6 +375,33 @@
                 </button>
             </div>
 
+            <div class="migration-export-panel">
+                <div>
+                    <h3>Migrare pe alt telefon</h3>
+                    <p>
+                        Creează o arhivă portabilă verificată, apoi descarc-o
+                        împreună cu checksumul SHA-256.
+                    </p>
+                </div>
+                <div class="migration-options">
+                    <label><input id="migration-include-media" type="checkbox"> Media</label>
+                    <label><input id="migration-include-recordings" type="checkbox"> Înregistrări</label>
+                    <label><input id="migration-include-models" type="checkbox"> Modele AI</label>
+                    <button id="create-migration-button" type="button">
+                        Creează arhiva
+                    </button>
+                </div>
+                <p class="migration-size-warning">
+                    Seifurile și configurația sunt incluse automat. Modelele
+                    AI pot mări arhiva cu mai mulți GB.
+                </p>
+                <p id="migration-action-status" role="status" hidden></p>
+                <div id="migration-list" class="backup-list" aria-live="polite"></div>
+                <p id="migration-list-empty" class="backup-list-empty" hidden>
+                    Nu există încă arhive portabile.
+                </p>
+            </div>
+
             <div class="restore-warning">
                 <strong>Restaurarea înlocuiește datele curente.</strong>
                 <span>
