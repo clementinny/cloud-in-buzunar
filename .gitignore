@@ -22,3 +22,4 @@ android-monitor/app/build/
 android-monitor/*.apk
 android-monitor/*.apk.idsig
 android-monitor/codex-build.init.gradle
+docs/screenshots/drafts/
