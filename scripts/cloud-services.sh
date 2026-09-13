@@ -22,6 +22,7 @@ WEB_WATCHER_LOG="$LOG_DIR/web-watchers.log"
 AI_IDLE_LOG="$LOG_DIR/ai-idle.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
+VAULTWARDEN_MANAGER="$PROJECT_DIR/scripts/cloud-vaultwarden.sh"
 
 START_SSHD=true
 START_WEB=true
@@ -29,6 +30,7 @@ START_ARIA2=true
 START_TRANSMISSION=true
 START_AI=false
 START_HTTPS=false
+START_VAULTWARDEN=false
 BACKUP_ENABLED=true
 BACKUP_KEEP=3
 BACKUP_INTERVAL_HOURS=24
@@ -121,6 +123,12 @@ ai_is_healthy() {
 https_is_healthy() {
     [ -x "$HTTPS_MANAGER" ] \
         && "$HTTPS_MANAGER" status >/dev/null 2>&1
+}
+
+
+vaultwarden_is_healthy() {
+    [ -x "$VAULTWARDEN_MANAGER" ] \
+        && "$VAULTWARDEN_MANAGER" status >/dev/null 2>&1
 }
 
 
@@ -469,12 +477,35 @@ stop_https() {
 }
 
 
+start_vaultwarden() {
+    [ "$START_VAULTWARDEN" = true ] || return 0
+    vaultwarden_is_healthy && return 0
+    if [ ! -x "$VAULTWARDEN_MANAGER" ]; then
+        log_message WARN "Managerul Vaultwarden lipsește."
+        return 1
+    fi
+    if "$VAULTWARDEN_MANAGER" start >> "$LOG_DIR/vaultwarden-autostart.log" 2>&1; then
+        log_message INFO "Vaultwarden a fost pornit."
+        return 0
+    fi
+    log_message ERROR "Vaultwarden nu a putut fi pornit."
+    return 1
+}
+
+
+stop_vaultwarden() {
+    [ -x "$VAULTWARDEN_MANAGER" ] || return 0
+    "$VAULTWARDEN_MANAGER" stop >> "$LOG_DIR/vaultwarden-autostart.log" 2>&1
+}
+
+
 start_all() {
     start_sshd || true
     start_web || true
     start_aria2 || true
     start_transmission || true
     start_ai || true
+    start_vaultwarden || true
     start_https || true
 }
 
@@ -523,6 +554,11 @@ restart_https() {
 }
 
 
+restart_vaultwarden() {
+    "$VAULTWARDEN_MANAGER" restart >> "$LOG_DIR/vaultwarden-autostart.log" 2>&1
+}
+
+
 backup_is_recent() {
     local backup_dir="$DATA_DIR/backups"
     local interval_minutes=$((BACKUP_INTERVAL_HOURS * 60))
@@ -555,6 +591,13 @@ start_backup_if_due() {
         if "$PYTHON" -m app.backup create --keep "$BACKUP_KEEP" \
             >> "$BACKUP_LOG" 2>&1; then
             log_message INFO "Copia de siguranță programată s-a terminat."
+            if [ "$START_VAULTWARDEN" = true ] && [ -x "$VAULTWARDEN_MANAGER" ]; then
+                if "$VAULTWARDEN_MANAGER" backup >> "$BACKUP_LOG" 2>&1; then
+                    log_message INFO "Copia de siguranță Vaultwarden s-a terminat."
+                else
+                    log_message ERROR "Copia de siguranță Vaultwarden a eșuat."
+                fi
+            fi
         else
             log_message ERROR "Copia de siguranță programată a eșuat."
         fi
@@ -692,6 +735,7 @@ run_watchdog() {
     local transmission_failures=0
     local ai_failures=0
     local https_failures=0
+    local vaultwarden_failures=0
     local last_backup_check=0
     local last_web_watcher_check=0
     local current_time
@@ -797,6 +841,19 @@ run_watchdog() {
             fi
         fi
 
+        if [ "$START_VAULTWARDEN" = true ]; then
+            if vaultwarden_is_healthy; then
+                vaultwarden_failures=0
+            else
+                vaultwarden_failures=$((vaultwarden_failures + 1))
+                if [ "$vaultwarden_failures" -ge 3 ]; then
+                    log_message WARN "Vaultwarden nu răspunde; se repornește."
+                    restart_vaultwarden || true
+                    vaultwarden_failures=0
+                fi
+            fi
+        fi
+
         current_time="$(date +%s)"
 
         if [ $((current_time - last_backup_check)) -ge 3600 ]; then
@@ -829,6 +886,8 @@ print_service_status() {
         "$(ai_is_healthy && echo online || echo offline)"
     printf '  HTTPS:        %s\n' \
         "$(https_is_healthy && echo online || echo offline)"
+    printf '  Vaultwarden:  %s\n' \
+        "$(vaultwarden_is_healthy && echo online || echo offline)"
     printf '  Watchdog:     %s\n' \
         "$(watchdog_is_running && echo online || echo offline)"
     if [ -r "$WATCHDOG_HEARTBEAT_FILE" ]; then
@@ -912,9 +971,18 @@ case "${1:-}" in
     https-stop)
         stop_https
         ;;
+    vaultwarden-start)
+        start_vaultwarden
+        ;;
+    vaultwarden-stop)
+        stop_vaultwarden
+        ;;
+    vaultwarden-restart)
+        restart_vaultwarden
+        ;;
     *)
         printf '%s\n' \
-            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|migration-restart|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop}"
+            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|migration-restart|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop|vaultwarden-start|vaultwarden-stop|vaultwarden-restart}"
         exit 1
         ;;
 esac

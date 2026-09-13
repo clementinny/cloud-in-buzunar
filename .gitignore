@@ -10,7 +10,15 @@ data/
 *.aria2
 *.log
 *.before-*
+vaultwarden.env
+.test-deps/
+.android-build/
+.codex-android-output-*/
+.codex-android-signing-*/
 android-monitor/.gradle/
 android-monitor/local.properties
 android-monitor/build/
 android-monitor/app/build/
+android-monitor/*.apk
+android-monitor/*.apk.idsig
+android-monitor/codex-build.init.gradle

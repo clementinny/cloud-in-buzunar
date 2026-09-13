@@ -8,6 +8,7 @@ DATA_DIR="${CLOUD_DATA_DIR:-$HOME/cloud-in-buzunar-data}"
 CADDY_DIR="$DATA_DIR/caddy"
 CADDYFILE="$CADDY_DIR/Caddyfile"
 PROXY_CONFIG="$CADDY_DIR/proxy.conf"
+SITES_DIR="$CADDY_DIR/sites"
 AUTOSTART_CONFIG="$DATA_DIR/autostart.conf"
 HOST_NAME=""
 ADDITIONAL_HOSTS=()
@@ -177,8 +178,12 @@ esac
 command -v caddy >/dev/null 2>&1 \
     || die "Caddy nu este instalat. Rulează: pkg install caddy"
 
-mkdir -p "$CADDY_DIR" "$CADDY_DIR/data" "$CADDY_DIR/config" "$DATA_DIR/logs" "$DATA_DIR/runtime"
-chmod 700 "$CADDY_DIR" "$CADDY_DIR/data" "$CADDY_DIR/config" "$DATA_DIR/runtime"
+mkdir -p "$CADDY_DIR" "$CADDY_DIR/data" "$CADDY_DIR/config" "$SITES_DIR" "$DATA_DIR/logs" "$DATA_DIR/runtime"
+chmod 700 "$CADDY_DIR" "$CADDY_DIR/data" "$CADDY_DIR/config" "$SITES_DIR" "$DATA_DIR/runtime"
+if [ ! -e "$SITES_DIR/00-empty.caddy" ]; then
+    : > "$SITES_DIR/00-empty.caddy"
+    chmod 600 "$SITES_DIR/00-empty.caddy"
+fi
 
 TEMP_CADDYFILE="$CADDYFILE.tmp.$$"
 trap 'rm -f "$TEMP_CADDYFILE"' EXIT INT TERM
@@ -207,6 +212,7 @@ trap 'rm -f "$TEMP_CADDYFILE"' EXIT INT TERM
     printf '        -Server\n'
     printf '    }\n'
     printf '}\n'
+    printf '\nimport %s/*.caddy\n' "$SITES_DIR"
 } > "$TEMP_CADDYFILE"
 
 XDG_DATA_HOME="$CADDY_DIR/data" \

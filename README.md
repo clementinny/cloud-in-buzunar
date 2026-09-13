@@ -474,6 +474,48 @@ scripts/cloud-services.sh watchdog-sample
 scripts/cloud-services.sh status
 ```
 
+## Vaultwarden password vault
+
+Vaultwarden runs from the official ARM64 image inside an unprivileged Termux
+`proot` environment. Its backend listens only on `127.0.0.1`; Caddy publishes
+it over a dedicated HTTPS port. Vault data, configuration and rotating backups
+remain under `~/cloud-in-buzunar-data`, outside Git.
+
+Install the optional runtime once, then use a stable private address (preferably
+the phone's Tailscale IP) as the canonical host:
+
+```bash
+pkg install proot-distro
+proot-distro install debian
+
+scripts/install-vaultwarden.sh \
+  --host 100.79.176.74 \
+  --additional-host 192.168.1.225 \
+  --https-port 9443 \
+  --start
+```
+
+New registrations are closed by default. Open them only long enough to create
+the first account, then close them immediately:
+
+```bash
+scripts/cloud-vaultwarden.sh signup-open
+# Create the account at https://100.79.176.74:9443
+scripts/cloud-vaultwarden.sh signup-close
+```
+
+Useful maintenance commands:
+
+```bash
+scripts/cloud-vaultwarden.sh status
+scripts/cloud-vaultwarden.sh backup
+scripts/cloud-vaultwarden.sh restart
+```
+
+The watchdog starts and checks Vaultwarden automatically. Daily application
+backups also create a separate, checksum-protected Vaultwarden archive and keep
+the newest seven copies. Keep at least one encrypted copy off the server phone.
+
 The history charts begin to fill after the first successful sample. Use
 `watchdog-stop`, `watchdog-start` or `watchdog-restart` for maintenance. The
 configured interval is constrained to 15–3600 seconds; an invalid value falls
