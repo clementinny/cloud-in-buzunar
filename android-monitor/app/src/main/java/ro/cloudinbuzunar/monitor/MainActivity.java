@@ -2,6 +2,7 @@ package ro.cloudinbuzunar.monitor;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -470,15 +471,15 @@ public final class MainActivity extends Activity {
             Intent.ACTION_VIEW,
             Uri.parse(serverUrl)
         );
+        browserIntent.addCategory(Intent.CATEGORY_BROWSABLE);
 
-        if (browserIntent.resolveActivity(getPackageManager()) == null) {
+        try {
+            startActivity(browserIntent);
+        } catch (ActivityNotFoundException error) {
             messageText.setText(
                 "Nu există un browser disponibil pe acest telefon."
             );
-            return;
         }
-
-        startActivity(browserIntent);
     }
 
     private void updateServerWatchState(String state, String message) {
@@ -489,6 +490,7 @@ public final class MainActivity extends Activity {
         serverUrlInput.setEnabled(!enabled);
         serverPollIntervalSpinner.setEnabled(!enabled);
         serverFailureThresholdSpinner.setEnabled(!enabled);
+        openServerButton.setEnabled(true);
 
         String label;
 
