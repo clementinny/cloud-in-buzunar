@@ -12,6 +12,9 @@ downloads, private messaging, local AI and system administration. A companion
 Android application adds live camera/audio monitoring and independent server
 alerts.
 
+> **Language:** the current web interface and Android companion are in Romanian.
+> English localization is planned for a future update.
+
 ![CloudInBuzunar resource dashboard](docs/screenshots/03-system-status.png)
 
 ## What currently works
@@ -69,6 +72,37 @@ notification and privacy indicators.
   keep short rolling audio or video recordings. Pairing tokens are stored in
   Android Keystore.</p>
   <img src="docs/screenshots/10-android-source.png" alt="CloudInBuzunar Android companion">
+</details>
+
+<details>
+  <summary>More interface screenshots</summary>
+  <br>
+  <table>
+    <tr>
+      <td width="50%"><img src="docs/screenshots/01-dashboard.png" alt="CloudInBuzunar dashboard"></td>
+      <td width="50%"><img src="docs/screenshots/02-file-vault.png" alt="Personal file vault"></td>
+    </tr>
+    <tr>
+      <td align="center"><sub>Main dashboard</sub></td>
+      <td align="center"><sub>Personal file vault</sub></td>
+    </tr>
+    <tr>
+      <td width="50%"><img src="docs/screenshots/11-downloads.png" alt="Download manager"></td>
+      <td width="50%"><img src="docs/screenshots/13-local-ai.png" alt="Local AI chat"></td>
+    </tr>
+    <tr>
+      <td align="center"><sub>Download manager</sub></td>
+      <td align="center"><sub>Local AI chat</sub></td>
+    </tr>
+    <tr>
+      <td width="50%"><img src="docs/screenshots/12-android-alerts.png" alt="Android server alerts"></td>
+      <td width="50%"><img src="docs/screenshots/09-live-monitor-help.png" alt="Live monitor instructions"></td>
+    </tr>
+    <tr>
+      <td align="center"><sub>Independent Android alerts</sub></td>
+      <td align="center"><sub>Monitor setup guide</sub></td>
+    </tr>
+  </table>
 </details>
 
 ## Architecture
