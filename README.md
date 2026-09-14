@@ -2,6 +2,8 @@
 
 [![Tests](https://github.com/clementinny/cloud-in-buzunar/actions/workflows/tests.yml/badge.svg)](https://github.com/clementinny/cloud-in-buzunar/actions/workflows/tests.yml)
 
+![CloudInBuzunar - a home server that fits in your pocket](docs/social-preview.jpg)
+
 CloudInBuzunar is my personal home-server project built around a rooted Samsung
 Galaxy A70 and Termux. It started as a practical experiment: how much useful
 infrastructure can an older phone run reliably, without depending on a public
@@ -66,13 +68,23 @@ notification and privacy indicators.
 
 ![Live monitor and recordings](docs/screenshots/08-live-monitor.png)
 
-<details>
-  <summary>Android companion application</summary>
-  <p>The source phone can be armed locally, switched between cameras and set to
-  keep short rolling audio or video recordings. Pairing tokens are stored in
-  Android Keystore.</p>
-  <img src="docs/screenshots/10-android-source.png" alt="CloudInBuzunar Android companion">
-</details>
+### Android companion
+
+The source phone can be armed locally, switched between cameras and set to keep
+short rolling audio or video recordings. Pairing tokens are stored in Android
+Keystore. A second phone can independently check the server and display outage
+alerts.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/10-android-source.png" alt="CloudInBuzunar Android companion source controls"></td>
+    <td width="50%"><img src="docs/screenshots/12-android-alerts.png" alt="CloudInBuzunar Android server alerts"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Source controls and recording options</sub></td>
+    <td align="center"><sub>Independent server alerts</sub></td>
+  </tr>
+</table>
 
 <details>
   <summary>More interface screenshots</summary>
@@ -95,12 +107,10 @@ notification and privacy indicators.
       <td align="center"><sub>Local AI chat</sub></td>
     </tr>
     <tr>
-      <td width="50%"><img src="docs/screenshots/12-android-alerts.png" alt="Android server alerts"></td>
-      <td width="50%"><img src="docs/screenshots/09-live-monitor-help.png" alt="Live monitor instructions"></td>
+      <td colspan="2"><img src="docs/screenshots/09-live-monitor-help.png" alt="Live monitor instructions"></td>
     </tr>
     <tr>
-      <td align="center"><sub>Independent Android alerts</sub></td>
-      <td align="center"><sub>Monitor setup guide</sub></td>
+      <td colspan="2" align="center"><sub>Monitor setup guide</sub></td>
     </tr>
   </table>
 </details>
