@@ -17,7 +17,7 @@ alerts.
 > **Language:** the current web interface and Android companion are in Romanian.
 > English localization is planned for a future update.
 
-![CloudInBuzunar resource dashboard](docs/screenshots/03-system-status.png)
+![CloudInBuzunar main dashboard](docs/screenshots/01-dashboard.png)
 
 ## What currently works
 
@@ -39,6 +39,8 @@ alerts.
 The status page is the operational centre of the project. It shows service
 health, resource use and the processes running both inside Termux and across
 Android.
+
+![CloudInBuzunar resource dashboard](docs/screenshots/03-system-status.png)
 
 <table>
   <tr>
@@ -86,34 +88,26 @@ alerts.
   </tr>
 </table>
 
-<details>
-  <summary>More interface screenshots</summary>
-  <br>
-  <table>
-    <tr>
-      <td width="50%"><img src="docs/screenshots/01-dashboard.png" alt="CloudInBuzunar dashboard"></td>
-      <td width="50%"><img src="docs/screenshots/02-file-vault.png" alt="Personal file vault"></td>
-    </tr>
-    <tr>
-      <td align="center"><sub>Main dashboard</sub></td>
-      <td align="center"><sub>Personal file vault</sub></td>
-    </tr>
-    <tr>
-      <td width="50%"><img src="docs/screenshots/11-downloads.png" alt="Download manager"></td>
-      <td width="50%"><img src="docs/screenshots/13-local-ai.png" alt="Local AI chat"></td>
-    </tr>
-    <tr>
-      <td align="center"><sub>Download manager</sub></td>
-      <td align="center"><sub>Local AI chat</sub></td>
-    </tr>
-    <tr>
-      <td colspan="2"><img src="docs/screenshots/09-live-monitor-help.png" alt="Live monitor instructions"></td>
-    </tr>
-    <tr>
-      <td colspan="2" align="center"><sub>Monitor setup guide</sub></td>
-    </tr>
-  </table>
-</details>
+### Files, downloads and local AI
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/02-file-vault.png" alt="Personal file vault"></td>
+    <td width="50%"><img src="docs/screenshots/11-downloads.png" alt="Download manager"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Personal file vault</sub></td>
+    <td align="center"><sub>Download manager</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/13-local-ai.png" alt="Local AI chat"></td>
+    <td width="50%"><img src="docs/screenshots/09-live-monitor-help.png" alt="Live monitor instructions"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Local AI chat</sub></td>
+    <td align="center"><sub>Monitor setup guide</sub></td>
+  </tr>
+</table>
 
 ## Architecture
 
