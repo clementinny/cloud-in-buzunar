@@ -319,6 +319,12 @@ function renderRecordings(entries) {
         player.controls = true;
         player.preload = "none";
         player.src = entry.play_url;
+        player.addEventListener("play", () => {
+            stopRecordingsRefresh();
+        });
+        player.addEventListener("ended", () => {
+            startRecordingsRefresh();
+        });
         information.append(createSpeechActivity(entry, player));
 
         const deleteButton = document.createElement("button");
@@ -354,6 +360,29 @@ function recordingPlaybackIsActive() {
     return [...recordingList.querySelectorAll("audio, video")].some(
         (player) => !player.paused && !player.ended,
     );
+}
+
+
+function stopRecordingsRefresh() {
+    if (!recordingsTimer) {
+        return;
+    }
+
+    window.clearInterval(recordingsTimer);
+    recordingsTimer = null;
+}
+
+
+function startRecordingsRefresh() {
+    if (recordingsTimer || recordingPlaybackIsActive()) {
+        return;
+    }
+
+    recordingsTimer = window.setInterval(() => {
+        loadRecordings({skipWhilePlaying: true}).catch((error) => {
+            showError(error.message);
+        });
+    }, 15000);
 }
 
 
@@ -1067,11 +1096,7 @@ async function initializeMonitorPage() {
         });
     }, 1000);
 
-    recordingsTimer = window.setInterval(() => {
-        loadRecordings({skipWhilePlaying: true}).catch((error) => {
-            showError(error.message);
-        });
-    }, 15000);
+    startRecordingsRefresh();
 }
 
 

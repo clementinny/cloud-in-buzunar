@@ -212,6 +212,18 @@ class MonitorDevicePairingTest(unittest.TestCase):
         self.assertEqual(playback_response.data, b"test-aac-segment")
         playback_response.close()
 
+        range_response = admin_client.get(
+            f"/api/monitor/recordings/{recording_id}",
+            headers={"Range": "bytes=0-3"},
+        )
+        self.assertEqual(range_response.status_code, 206)
+        self.assertEqual(range_response.data, b"test")
+        self.assertEqual(
+            range_response.headers["Content-Range"],
+            "bytes 0-3/16",
+        )
+        range_response.close()
+
         with (
             patch(
                 "app.monitor.speech_analysis_available",
