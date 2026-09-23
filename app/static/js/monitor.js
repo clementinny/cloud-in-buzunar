@@ -350,9 +350,27 @@ function renderRecordings(entries) {
 }
 
 
-async function loadRecordings() {
+function recordingPlaybackIsActive() {
+    return [...recordingList.querySelectorAll("audio, video")].some(
+        (player) => !player.paused && !player.ended,
+    );
+}
+
+
+async function loadRecordings({skipWhilePlaying = false} = {}) {
+    if (skipWhilePlaying && recordingPlaybackIsActive()) {
+        return;
+    }
+
     const response = await fetch("/api/monitor/recordings");
     const data = await readJsonResponse(response);
+
+    // Playback may have started while the recordings request was in flight.
+    // Replacing the player element would stop it immediately.
+    if (skipWhilePlaying && recordingPlaybackIsActive()) {
+        return;
+    }
+
     const label = data.count === 1 ? "înregistrare" : "înregistrări";
     recordingCount.textContent = `${data.count} ${label}`;
     recordingStorage.textContent = `${formatBytes(data.size_bytes)} ocupați`;
@@ -1050,7 +1068,7 @@ async function initializeMonitorPage() {
     }, 1000);
 
     recordingsTimer = window.setInterval(() => {
-        loadRecordings().catch((error) => {
+        loadRecordings({skipWhilePlaying: true}).catch((error) => {
             showError(error.message);
         });
     }, 15000);
