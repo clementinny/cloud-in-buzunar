@@ -3,6 +3,8 @@ import os
 import tempfile
 import time
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -224,6 +226,14 @@ class MonitorDevicePairingTest(unittest.TestCase):
         )
         range_response.close()
 
+        browser_response = admin_client.get(
+            f"/api/monitor/recordings/{recording_id}?browser=1"
+        )
+        self.assertEqual(browser_response.status_code, 200)
+        self.assertEqual(browser_response.content_type, "audio/webm")
+        self.assertEqual(browser_response.data, b"test-aac-segment")
+        browser_response.close()
+
         with (
             patch(
                 "app.monitor.speech_analysis_available",
@@ -252,6 +262,52 @@ class MonitorDevicePairingTest(unittest.TestCase):
             },
         )
         self.assertEqual(rejected_response.status_code, 401)
+
+    def test_prepares_android_audio_for_browser_playback(self):
+        from app.monitor import (
+            MONITOR_BROWSER_AUDIO_DIR,
+            MONITOR_RECORDING_DIR,
+            browser_audio_path,
+        )
+
+        source_path = MONITOR_RECORDING_DIR / "browser-source.m4a"
+        cached_path = MONITOR_BROWSER_AUDIO_DIR / "987654.webm"
+        source_path.write_bytes(b"android-m4a")
+        cached_path.unlink(missing_ok=True)
+        command = []
+
+        def encode_audio(arguments, **_kwargs):
+            command.extend(arguments)
+            Path(arguments[-1]).write_bytes(b"normalized-webm")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        try:
+            with (
+                patch(
+                    "app.monitor.shutil.which",
+                    return_value="/usr/bin/ffmpeg",
+                ),
+                patch(
+                    "app.monitor.subprocess.run",
+                    side_effect=encode_audio,
+                ),
+            ):
+                result = browser_audio_path(
+                    {"id": 987654, "container": "mp4"},
+                    source_path,
+                )
+
+            self.assertEqual(result, cached_path)
+            self.assertEqual(result.read_bytes(), b"normalized-webm")
+            self.assertIn("libopus", command)
+            audio_filter = command[command.index("-af") + 1]
+            self.assertIn(
+                "aresample=16000:async=1:first_pts=0",
+                audio_filter,
+            )
+        finally:
+            source_path.unlink(missing_ok=True)
+            cached_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

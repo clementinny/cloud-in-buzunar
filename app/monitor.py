@@ -3,6 +3,8 @@ import hashlib
 import queue
 import re
 import secrets
+import shutil
+import subprocess
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -65,6 +67,9 @@ DATA_DIR = Path.home() / "cloud-in-buzunar-data"
 MONITOR_RECORDING_DIR = DATA_DIR / "monitor-recordings"
 MONITOR_RECORDING_DIR.mkdir(parents=True, exist_ok=True)
 MONITOR_RECORDING_DIR.chmod(0o700)
+MONITOR_BROWSER_AUDIO_DIR = DATA_DIR / "monitor-browser-audio"
+MONITOR_BROWSER_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+MONITOR_BROWSER_AUDIO_DIR.chmod(0o700)
 SPEECH_ANALYSIS_QUEUE = queue.Queue()
 
 
@@ -306,6 +311,102 @@ def prune_monitor_recordings(retention_hours=None):
         (MONITOR_RECORDING_DIR / recording["file_name"]).unlink(
             missing_ok=True
         )
+        (
+            MONITOR_BROWSER_AUDIO_DIR
+            / f"{recording['id']}.webm"
+        ).unlink(missing_ok=True)
+
+
+def browser_audio_path(recording, recording_path):
+    if recording["container"] == "webm":
+        return recording_path
+
+    ffmpeg = shutil.which("ffmpeg")
+
+    if ffmpeg is None:
+        raise RuntimeError("FFmpeg is not available on the server")
+
+    cached_path = (
+        MONITOR_BROWSER_AUDIO_DIR
+        / f"{recording['id']}.webm"
+    )
+
+    try:
+        if (
+            cached_path.is_file()
+            and cached_path.stat().st_size > 0
+            and cached_path.stat().st_mtime_ns
+            >= recording_path.stat().st_mtime_ns
+        ):
+            return cached_path
+    except OSError:
+        cached_path.unlink(missing_ok=True)
+
+    temporary_path = cached_path.with_name(
+        f".{cached_path.name}.{uuid.uuid4().hex}.part"
+    )
+
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-threads",
+                "1",
+                "-y",
+                "-i",
+                str(recording_path),
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-af",
+                (
+                    "asetpts=PTS-STARTPTS,"
+                    "aresample=16000:async=1:first_pts=0"
+                ),
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "24k",
+                "-vbr",
+                "on",
+                "-application",
+                "audio",
+                "-f",
+                "webm",
+                str(temporary_path),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        temporary_path.unlink(missing_ok=True)
+        raise RuntimeError(
+            "Recording could not be prepared for browser playback"
+        ) from error
+
+    if (
+        result.returncode != 0
+        or not temporary_path.is_file()
+        or temporary_path.stat().st_size == 0
+    ):
+        temporary_path.unlink(missing_ok=True)
+        raise RuntimeError(
+            "Recording could not be prepared for browser playback"
+        )
+
+    temporary_path.chmod(0o600)
+    temporary_path.replace(cached_path)
+    return cached_path
 
 
 def parse_recording_timestamp(value, field_name):
@@ -788,6 +889,26 @@ def monitor_play_recording(recording_id):
     if not recording_path.is_file():
         return jsonify({"error": "Recording file not found"}), 404
 
+    if (
+        recording["mode"] == "audio"
+        and request.args.get("browser") == "1"
+    ):
+        try:
+            playback_path = browser_audio_path(
+                recording,
+                recording_path,
+            )
+        except RuntimeError as error:
+            return jsonify({"error": str(error)}), 503
+
+        response = send_file(
+            playback_path,
+            mimetype="audio/webm",
+            conditional=True,
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
     mimetype = f"{recording['mode']}/{recording['container']}"
     return send_file(
         recording_path,
@@ -839,6 +960,10 @@ def monitor_delete_recording(recording_id):
     (MONITOR_RECORDING_DIR / recording["file_name"]).unlink(
         missing_ok=True
     )
+    (
+        MONITOR_BROWSER_AUDIO_DIR
+        / f"{recording_id}.webm"
+    ).unlink(missing_ok=True)
     return jsonify({"deleted": recording_id})
 
 

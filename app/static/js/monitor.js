@@ -347,7 +347,12 @@ function renderRecordings(entries) {
             player.pause();
 
             try {
-                const response = await fetch(entry.play_url, {
+                const playbackUrl = new URL(
+                    entry.play_url,
+                    window.location.href,
+                );
+                playbackUrl.searchParams.set("browser", "1");
+                const response = await fetch(playbackUrl, {
                     cache: "no-store",
                 });
 
