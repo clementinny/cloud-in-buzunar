@@ -64,6 +64,7 @@ let browserRecordingStartedAt = null;
 let browserRecordingMode = "off";
 let browserRecordingTimer = null;
 let browserRecordingStopPromise = null;
+const recordingObjectUrls = new Set();
 
 const browserRecordingSegmentMilliseconds = 10 * 60 * 1000;
 
@@ -283,6 +284,10 @@ function renderRecordingControls(data) {
 
 
 function renderRecordings(entries) {
+    for (const objectUrl of recordingObjectUrls) {
+        URL.revokeObjectURL(objectUrl);
+    }
+    recordingObjectUrls.clear();
     recordingList.replaceChildren();
 
     if (entries.length === 0) {
@@ -319,8 +324,68 @@ function renderRecordings(entries) {
         player.controls = true;
         player.preload = "none";
         player.src = entry.play_url;
-        player.addEventListener("play", () => {
+        player.dataset.audioSource = "remote";
+        player.addEventListener("play", async () => {
             stopRecordingsRefresh();
+
+            if (
+                entry.mode !== "audio"
+                || player.dataset.audioSource === "ready"
+            ) {
+                return;
+            }
+
+            if (player.dataset.audioSource === "loading") {
+                player.pause();
+                return;
+            }
+
+            const resumeAt = Number.isFinite(player.currentTime)
+                ? player.currentTime
+                : 0;
+            player.dataset.audioSource = "loading";
+            player.pause();
+
+            try {
+                const response = await fetch(entry.play_url, {
+                    cache: "no-store",
+                });
+
+                if (!response.ok) {
+                    throw new Error(
+                        `Înregistrarea nu a putut fi încărcată: HTTP ${response.status}`,
+                    );
+                }
+
+                const blob = await response.blob();
+
+                if (!player.isConnected) {
+                    return;
+                }
+
+                const objectUrl = URL.createObjectURL(blob);
+                recordingObjectUrls.add(objectUrl);
+                player.dataset.audioSource = "ready";
+                player.addEventListener("loadedmetadata", () => {
+                    if (resumeAt > 0 && Number.isFinite(player.duration)) {
+                        player.currentTime = Math.min(
+                            resumeAt,
+                            Math.max(0, player.duration - 0.05),
+                        );
+                    }
+
+                    player.play().catch(() => {
+                        // Some browsers require a second click after an
+                        // asynchronous download. The local source is ready.
+                    });
+                }, {once: true});
+                player.src = objectUrl;
+                player.load();
+            } catch (error) {
+                player.dataset.audioSource = "remote";
+                startRecordingsRefresh();
+                showError(error.message);
+            }
         });
         player.addEventListener("ended", () => {
             startRecordingsRefresh();
@@ -1108,6 +1173,11 @@ window.addEventListener("pagehide", () => {
     if (recordingsTimer) {
         window.clearInterval(recordingsTimer);
     }
+
+    for (const objectUrl of recordingObjectUrls) {
+        URL.revokeObjectURL(objectUrl);
+    }
+    recordingObjectUrls.clear();
 
     if (peerConnection) {
         peerConnection.close();
