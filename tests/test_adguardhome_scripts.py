@@ -61,6 +61,8 @@ class AdGuardHomeScriptTests(unittest.TestCase):
         self.assertIn("--dport 53", self.manager)
         self.assertIn("--to-ports $ADGUARD_DNS_PORT", self.manager)
         self.assertIn("for protocol in udp tcp", self.manager)
+        self.assertIn("for firewall in iptables ip6tables", self.manager)
+        self.assertIn("Redirecționare DNS \\$family", self.manager)
 
     def test_service_supervisor_starts_and_monitors_adguardhome(self):
         self.assertIn("START_ADGUARDHOME=false", self.services)

@@ -525,9 +525,9 @@ The AdGuard Home integration uses the official stable ARM64 release and checks
 its SHA-256 digest before installation. The DNS process itself runs as the
 normal Termux user on port `1053`. AdGuard Home requires administrator rights
 while its first-run wizard creates the configuration, so the manager uses root
-temporarily for that step. Afterwards root is kept only for two narrowly scoped
-`iptables` rules (UDP and TCP) that redirect incoming DNS traffic on the Android
-Wi-Fi interface from port `53` to `1053`.
+temporarily for that step. Afterwards root is kept only for four narrowly scoped
+`iptables`/`ip6tables` rules (UDP and TCP for IPv4 and IPv6) that redirect
+incoming DNS traffic on the Android Wi-Fi interface from port `53` to `1053`.
 
 Install and start it on the rooted server phone:
 
@@ -579,8 +579,9 @@ availability but can allow some queries to bypass filtering. Remove the public
 fallback after autostart and recovery have been proven stable.
 
 If the router advertises an ISP IPv6 DNS server, clients may bypass the IPv4
-filter. Configure the router's IPv6 DNS to use AdGuard Home too, or disable the
-router's IPv6 DNS advertisement until the server has a stable IPv6 address.
+filter. Configure its IPv6 DNS/RDNSS address to the phone's stable link-local
+address; the manager's matching `ip6tables` redirect sends those queries to
+AdGuard Home without disabling IPv6 connectivity.
 
 Useful checks and recovery commands:
 

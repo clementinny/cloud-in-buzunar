@@ -88,10 +88,13 @@ ensure_dns_redirect() {
     local root_script
     root_script="
 set -e
-for protocol in udp tcp; do
-    if ! iptables -t nat -C PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT >/dev/null 2>&1; then
-        iptables -t nat -I PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT
-    fi
+for firewall in iptables ip6tables; do
+    command -v \"\$firewall\" >/dev/null
+    for protocol in udp tcp; do
+        if ! \"\$firewall\" -t nat -C PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT >/dev/null 2>&1; then
+            \"\$firewall\" -t nat -I PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT
+        fi
+    done
 done
 "
     su -c "$root_script" >/dev/null \
@@ -104,14 +107,17 @@ remove_dns_redirect() {
 
     local root_script
     root_script="
-for protocol in udp tcp; do
-    while iptables -t nat -C PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT >/dev/null 2>&1; do
-        iptables -t nat -D PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT || break
+for firewall in iptables ip6tables; do
+    command -v \"\$firewall\" >/dev/null 2>&1 || continue
+    for protocol in udp tcp; do
+        while \"\$firewall\" -t nat -C PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT >/dev/null 2>&1; do
+            \"\$firewall\" -t nat -D PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT || break
+        done
     done
 done
 "
     su -c "$root_script" >/dev/null 2>&1 \
-        || die "Procesul temporar AdGuard Home nu a putut fi oprit."
+        || die "Regulile DNS nu au putut fi eliminate."
 }
 
 
@@ -332,13 +338,22 @@ firewall_status() {
     local root_script
     root_script="
 missing=false
-for protocol in udp tcp; do
-    if iptables -t nat -C PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT >/dev/null 2>&1; then
-        echo \"Redirecționare DNS \$protocol 53 -> $ADGUARD_DNS_PORT: activă\"
-    else
-        echo \"Redirecționare DNS \$protocol 53 -> $ADGUARD_DNS_PORT: lipsește\"
+for firewall in iptables ip6tables; do
+    family=IPv4
+    [ \"\$firewall\" = ip6tables ] && family=IPv6
+    if ! command -v \"\$firewall\" >/dev/null 2>&1; then
+        echo \"Redirecționare DNS \$family: utilitarul \$firewall lipsește\"
         missing=true
+        continue
     fi
+    for protocol in udp tcp; do
+        if \"\$firewall\" -t nat -C PREROUTING -i $ADGUARD_LAN_INTERFACE -p \"\$protocol\" --dport 53 -j REDIRECT --to-ports $ADGUARD_DNS_PORT >/dev/null 2>&1; then
+            echo \"Redirecționare DNS \$family \$protocol 53 -> $ADGUARD_DNS_PORT: activă\"
+        else
+            echo \"Redirecționare DNS \$family \$protocol 53 -> $ADGUARD_DNS_PORT: lipsește\"
+            missing=true
+        fi
+    done
 done
 [ \"\$missing\" = false ]
 "
