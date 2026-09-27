@@ -558,7 +558,10 @@ scripts/cloud-adguardhome.sh finalize
 ```
 
 This returns the generated files to the Termux user and restarts AdGuard Home
-without root privileges.
+without root privileges. The manager disables only automatic ARP-table client
+discovery because the official Linux binary uses a syscall blocked by Android's
+application sandbox. DNS filtering, query statistics and clients identified by
+IP continue to work; friendly client names can be added manually in AdGuard.
 
 Do not select port `53` in the wizard. Port `53` belongs to the root firewall
 redirect; keeping AdGuard Home on `1053` avoids running the complete DNS service

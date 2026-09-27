@@ -176,6 +176,19 @@ stop_bootstrap() {
 }
 
 
+disable_android_arp_source() {
+    # Buildul Linux oficial folosește faccessat2 când caută utilitarul arp.
+    # Android blochează syscall-ul pentru UID-urile aplicațiilor și omoară
+    # procesul cu SIGSYS. Dezactivăm numai această sursă opțională de nume.
+    if grep -qE '^[[:space:]]*arp:[[:space:]]*true[[:space:]]*$' "$CONFIG_FILE"; then
+        sed -i \
+            's/^\([[:space:]]*arp:\)[[:space:]]*true[[:space:]]*$/\1 false/' \
+            "$CONFIG_FILE"
+        printf 'Descoperirea ARP a fost dezactivată pentru compatibilitate Android.\n'
+    fi
+}
+
+
 finalize_setup() {
     load_config
     [ -s "$CONFIG_FILE" ] \
@@ -223,6 +236,8 @@ start_service() {
         printf 'AdGuard Home răspunde deja pe portul web %s.\n' "$ADGUARD_ADMIN_PORT"
         return 0
     fi
+
+    disable_android_arp_source
 
     local process_id
     if process_id="$(running_pid)"; then

@@ -54,6 +54,8 @@ class AdGuardHomeScriptTests(unittest.TestCase):
         self.assertIn('su -c "$root_script"', self.manager)
         self.assertIn('chown -R %q:%q %q', self.manager)
         self.assertIn('finalize) finalize_setup', self.manager)
+        self.assertIn('disable_android_arp_source', self.manager)
+        self.assertIn("arp:[[:space:]]*true", self.manager)
         self.assertIn("--dport 53", self.manager)
         self.assertIn("--to-ports $ADGUARD_DNS_PORT", self.manager)
         self.assertIn("for protocol in udp tcp", self.manager)
