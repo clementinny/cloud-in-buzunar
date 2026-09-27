@@ -18,7 +18,7 @@ ADGUARD_URL="https://github.com/AdguardTeam/AdGuardHome/releases/download/$ADGUA
 ADGUARD_SHA256="3f7893c18e8aaadc456d0452839190561c306ca95175a2254958be80a769c1ae"
 
 ADMIN_PORT=3000
-DNS_PORT=5353
+DNS_PORT=1053
 LAN_INTERFACE="wlan0"
 START_AFTER=false
 
@@ -32,7 +32,7 @@ Utilizare:
 
 Opțiuni:
   --admin-port PORT      Panoul web local (implicit 3000)
-  --dns-port PORT        Portul DNS intern neprivilegiat (implicit 5353)
+  --dns-port PORT        Portul DNS intern neprivilegiat (implicit 1053)
   --interface NUME       Interfața LAN Android (implicit wlan0)
   --start                Pornește serviciul după instalare
   -h, --help             Afișează ajutorul

@@ -754,7 +754,7 @@ def collect_adguardhome_service():
     )
     dns_port = read_adguardhome_port(
         "ADGUARD_DNS_PORT",
-        5353,
+        1053,
     )
     admin_online = tcp_port_is_open(admin_port)
     dns_online = tcp_port_is_open(dns_port)

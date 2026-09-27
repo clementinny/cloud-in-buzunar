@@ -40,6 +40,9 @@ class AdGuardHomeScriptTests(unittest.TestCase):
         )
 
     def test_dns_process_is_unprivileged_after_root_bootstrap(self):
+        self.assertIn('DNS_PORT=1053', self.installer)
+        self.assertIn('ADGUARD_DNS_PORT=1053', self.manager)
+        self.assertNotIn('DNS_PORT=5353', self.installer)
         start_section = self.manager.split("start_service()", 1)[1].split(
             "stop_process()",
             1,
