@@ -67,6 +67,10 @@ BACKUP_DIR = DATA_DIR / "backups"
 AUTOSTART_CONFIG_FILE = DATA_DIR / "autostart.conf"
 WATCHDOG_PID_FILE = DATA_DIR / "runtime" / "cloud-watchdog.pid"
 SERVICE_LOG_FILE = DATA_DIR / "logs" / "cloud-services.log"
+ADGUARDHOME_DIR = DATA_DIR / "adguardhome"
+ADGUARDHOME_BINARY = ADGUARDHOME_DIR / "app" / "AdGuardHome"
+ADGUARDHOME_CONFIG = ADGUARDHOME_DIR / "config" / "AdGuardHome.yaml"
+ADGUARDHOME_SETTINGS = ADGUARDHOME_DIR / "adguardhome.env"
 SERVER_STARTED_AT = time.monotonic()
 BATTERY_CACHE_SECONDS = 5
 BATTERY_CACHE_LOCK = Lock()
@@ -701,6 +705,99 @@ def collect_monitor_service():
     )
 
 
+def read_adguardhome_port(name, default):
+    try:
+        lines = ADGUARDHOME_SETTINGS.read_text(
+            encoding="utf-8",
+        ).splitlines()
+    except OSError:
+        return default
+
+    prefix = f"{name}="
+    for line in lines:
+        if not line.startswith(prefix):
+            continue
+
+        value = line.removeprefix(prefix).strip().strip("'\"")
+        try:
+            port = int(value)
+        except ValueError:
+            return default
+
+        if 1 <= port <= 65535:
+            return port
+        return default
+
+    return default
+
+
+def tcp_port_is_open(port):
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def collect_adguardhome_service():
+    if not ADGUARDHOME_BINARY.is_file():
+        return service_result(
+            "adguardhome",
+            "AdGuard Home",
+            "idle",
+            "Filtrarea DNS pentru rețeaua casei nu este instalată.",
+        )
+
+    admin_port = read_adguardhome_port(
+        "ADGUARD_ADMIN_PORT",
+        3000,
+    )
+    dns_port = read_adguardhome_port(
+        "ADGUARD_DNS_PORT",
+        5353,
+    )
+    admin_online = tcp_port_is_open(admin_port)
+    dns_online = tcp_port_is_open(dns_port)
+
+    if admin_online and not ADGUARDHOME_CONFIG.is_file():
+        return service_result(
+            "adguardhome",
+            "AdGuard Home",
+            "warning",
+            "Serviciul așteaptă finalizarea configurării inițiale.",
+            [
+                metric("Panou", admin_port),
+                metric("DNS intern", dns_port),
+            ],
+            impact="warning",
+        )
+
+    if admin_online and dns_online:
+        return service_result(
+            "adguardhome",
+            "AdGuard Home",
+            "healthy",
+            "Filtrarea DNS a rețelei este activă.",
+            [
+                metric("Panou", admin_port),
+                metric("DNS intern", dns_port),
+            ],
+            impact="critical",
+        )
+
+    return service_result(
+        "adguardhome",
+        "AdGuard Home",
+        "offline",
+        "DNS-ul casei nu răspunde; dispozitivele pot pierde rezolvarea numelor.",
+        [
+            metric("Panou", "online" if admin_online else "offline"),
+            metric("DNS", "online" if dns_online else "offline"),
+        ],
+        impact="critical",
+    )
+
+
 def read_watchdog_pid():
     try:
         process_id = int(
@@ -775,6 +872,7 @@ STATUS_COLLECTORS = [
     collect_aria2_service,
     collect_transmission_service,
     collect_ai_service,
+    collect_adguardhome_service,
     collect_monitor_service,
     collect_supervisor_service,
 ]
@@ -788,6 +886,7 @@ STATUS_ORDER = [
     "aria2",
     "transmission",
     "ai",
+    "adguardhome",
     "monitor",
     "supervisor",
 ]

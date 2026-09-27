@@ -519,6 +519,66 @@ The watchdog starts and checks Vaultwarden automatically. Daily application
 backups also create a separate, checksum-protected Vaultwarden archive and keep
 the newest seven copies. Keep at least one encrypted copy off the server phone.
 
+## AdGuard Home DNS for the home network
+
+The AdGuard Home integration uses the official stable ARM64 release and checks
+its SHA-256 digest before installation. The DNS process itself runs as the
+normal Termux user on port `5353`. Root is used only to install two narrowly
+scoped `iptables` rules (UDP and TCP) that redirect incoming DNS traffic on the
+Android Wi-Fi interface from port `53` to `5353`.
+
+Install and start it on the rooted server phone:
+
+```bash
+cd "$HOME/projects/cloud-in-buzunar"
+chmod +x scripts/cloud-adguardhome.sh scripts/install-adguardhome.sh
+scripts/install-adguardhome.sh --interface wlan0 --start
+```
+
+Approve the one Magisk root request. Then open the initial setup page from a
+device on the same LAN:
+
+```text
+http://PHONE_LAN_IP:3000
+```
+
+In the setup wizard use these exact values:
+
+- Admin web interface: `All interfaces`, port `3000`
+- DNS server: `All interfaces`, port `5353`
+- Create a unique administrator username and a strong password
+
+Do not select port `53` in the wizard. Port `53` belongs to the root firewall
+redirect; keeping AdGuard Home on `5353` avoids running the complete DNS service
+with root privileges.
+
+Before changing the router, test one computer manually with the phone's LAN IP
+as its DNS server. Verify both name resolution and blocking, then inspect the
+AdGuard Home query log. Once that works, open the router's LAN/DHCP DNS settings
+and enter the phone's reserved address, for example `192.168.1.137`, as DNS 1.
+For the first day DNS 2 may be `1.1.1.1` as an emergency fallback; this improves
+availability but can allow some queries to bypass filtering. Remove the public
+fallback after autostart and recovery have been proven stable.
+
+If the router advertises an ISP IPv6 DNS server, clients may bypass the IPv4
+filter. Configure the router's IPv6 DNS to use AdGuard Home too, or disable the
+router's IPv6 DNS advertisement until the server has a stable IPv6 address.
+
+Useful checks and recovery commands:
+
+```bash
+scripts/cloud-adguardhome.sh status
+scripts/cloud-adguardhome.sh firewall-status
+scripts/cloud-adguardhome.sh restart
+scripts/cloud-adguardhome.sh stop
+tail -n 50 "$HOME/cloud-in-buzunar-data/logs/adguardhome.log"
+```
+
+Stopping the service also removes the DNS redirect. The CloudInBuzunar watchdog
+checks the service every minute and restarts it after three consecutive failed
+checks. AdGuard Home's own configuration, filters, query history and statistics
+remain outside Git under `~/cloud-in-buzunar-data/adguardhome`.
+
 The history charts begin to fill after the first successful sample. Use
 `watchdog-stop`, `watchdog-start` or `watchdog-restart` for maintenance. The
 configured interval is constrained to 15–3600 seconds; an invalid value falls
@@ -579,7 +639,6 @@ scoped firewall/router rules and an additional security review.
 
 ## Roadmap
 
-- Router-level DNS filtering after deployment on the permanent home network
 - Additional recovery drills and alert delivery tests on physical phones
 - Optional password-vault and offline-knowledge services after resource review
 

@@ -33,6 +33,7 @@ alerts.
 - HTTPS through Caddy, plus optional access over a private VPN
 - Native Android companion for alerts, motion detection and opt-in WebRTC monitoring
 - Vaultwarden as a separately managed password-vault service
+- Network-wide DNS filtering through AdGuard Home
 
 ## Interface
 
@@ -118,8 +119,10 @@ flowchart LR
     Flask --> SQLite[(SQLite)]
     Flask --> Storage[(Phone storage)]
     Flask --> Services[aria2 / Transmission / llama.cpp]
+    Home[Home LAN devices] -->|DNS port 53| AdGuard[AdGuard Home]
     Watchdog[Watchdog + thermal guardian] --> Flask
     Watchdog --> Services
+    Watchdog --> AdGuard
 ```
 
 The application and its data are deliberately separated. Source code lives in
@@ -151,6 +154,7 @@ backups stay under `~/cloud-in-buzunar-data` and are never committed.
 - aria2 and Transmission
 - Java Android companion application with WebRTC
 - Termux, Termux:API and Termux:Boot
+- AdGuard Home for LAN-wide DNS filtering
 - GitHub Actions for Python, JavaScript and shell checks
 
 ## Repository layout
@@ -206,9 +210,10 @@ tests cannot prove those hardware paths.
 ## Security boundaries
 
 This is a personal engineering project, not a hardened public-cloud product.
-Administrative pages, Vaultwarden and monitoring endpoints should stay behind
-HTTPS and preferably a trusted LAN or private VPN. Secrets, databases, uploaded
-files, AI models and generated certificates are excluded from Git.
+Administrative pages, Vaultwarden, AdGuard Home and monitoring endpoints should
+stay behind HTTPS and preferably a trusted LAN or private VPN. Secrets,
+databases, uploaded files, AI models and generated certificates are excluded
+from Git.
 
 ## What I learned
 
@@ -220,7 +225,6 @@ Android companion instead of treating them as separate systems.
 
 ## Next steps
 
-- Deploy AdGuard Home after the server moves to its permanent network
 - Run and document a full restore drill on a second phone
 - Improve signed Android release automation
 - Continue reducing idle CPU use and battery temperature

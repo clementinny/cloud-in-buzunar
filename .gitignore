@@ -11,7 +11,9 @@ data/
 *.log
 *.before-*
 vaultwarden.env
+adguardhome.env
 .test-deps/
+.codex-test-deps/
 .android-build/
 .codex-android-output-*/
 .codex-android-signing-*/

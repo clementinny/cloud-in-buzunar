@@ -23,6 +23,7 @@ AI_IDLE_LOG="$LOG_DIR/ai-idle.log"
 THERMAL_SUSPENDED_DIR="$RUNTIME_DIR/thermal-suspended"
 HTTPS_MANAGER="$PROJECT_DIR/scripts/cloud-https.sh"
 VAULTWARDEN_MANAGER="$PROJECT_DIR/scripts/cloud-vaultwarden.sh"
+ADGUARDHOME_MANAGER="$PROJECT_DIR/scripts/cloud-adguardhome.sh"
 
 START_SSHD=true
 START_WEB=true
@@ -31,6 +32,7 @@ START_TRANSMISSION=true
 START_AI=false
 START_HTTPS=false
 START_VAULTWARDEN=false
+START_ADGUARDHOME=false
 BACKUP_ENABLED=true
 BACKUP_KEEP=3
 BACKUP_INTERVAL_HOURS=24
@@ -129,6 +131,12 @@ https_is_healthy() {
 vaultwarden_is_healthy() {
     [ -x "$VAULTWARDEN_MANAGER" ] \
         && "$VAULTWARDEN_MANAGER" status >/dev/null 2>&1
+}
+
+
+adguardhome_is_healthy() {
+    [ -x "$ADGUARDHOME_MANAGER" ] \
+        && "$ADGUARDHOME_MANAGER" status >/dev/null 2>&1
 }
 
 
@@ -499,6 +507,28 @@ stop_vaultwarden() {
 }
 
 
+start_adguardhome() {
+    [ "$START_ADGUARDHOME" = true ] || return 0
+    adguardhome_is_healthy && return 0
+    if [ ! -x "$ADGUARDHOME_MANAGER" ]; then
+        log_message WARN "Managerul AdGuard Home lipsește."
+        return 1
+    fi
+    if "$ADGUARDHOME_MANAGER" start >> "$LOG_DIR/adguardhome-autostart.log" 2>&1; then
+        log_message INFO "AdGuard Home a fost pornit."
+        return 0
+    fi
+    log_message ERROR "AdGuard Home nu a putut fi pornit."
+    return 1
+}
+
+
+stop_adguardhome() {
+    [ -x "$ADGUARDHOME_MANAGER" ] || return 0
+    "$ADGUARDHOME_MANAGER" stop >> "$LOG_DIR/adguardhome-autostart.log" 2>&1
+}
+
+
 start_all() {
     start_sshd || true
     start_web || true
@@ -506,6 +536,7 @@ start_all() {
     start_transmission || true
     start_ai || true
     start_vaultwarden || true
+    start_adguardhome || true
     start_https || true
 }
 
@@ -556,6 +587,11 @@ restart_https() {
 
 restart_vaultwarden() {
     "$VAULTWARDEN_MANAGER" restart >> "$LOG_DIR/vaultwarden-autostart.log" 2>&1
+}
+
+
+restart_adguardhome() {
+    "$ADGUARDHOME_MANAGER" restart >> "$LOG_DIR/adguardhome-autostart.log" 2>&1
 }
 
 
@@ -736,6 +772,7 @@ run_watchdog() {
     local ai_failures=0
     local https_failures=0
     local vaultwarden_failures=0
+    local adguardhome_failures=0
     local last_backup_check=0
     local last_web_watcher_check=0
     local current_time
@@ -854,6 +891,19 @@ run_watchdog() {
             fi
         fi
 
+        if [ "$START_ADGUARDHOME" = true ]; then
+            if adguardhome_is_healthy; then
+                adguardhome_failures=0
+            else
+                adguardhome_failures=$((adguardhome_failures + 1))
+                if [ "$adguardhome_failures" -ge 3 ]; then
+                    log_message WARN "AdGuard Home nu răspunde; se repornește."
+                    restart_adguardhome || true
+                    adguardhome_failures=0
+                fi
+            fi
+        fi
+
         current_time="$(date +%s)"
 
         if [ $((current_time - last_backup_check)) -ge 3600 ]; then
@@ -888,6 +938,8 @@ print_service_status() {
         "$(https_is_healthy && echo online || echo offline)"
     printf '  Vaultwarden:  %s\n' \
         "$(vaultwarden_is_healthy && echo online || echo offline)"
+    printf '  AdGuard Home: %s\n' \
+        "$(adguardhome_is_healthy && echo online || echo offline)"
     printf '  Watchdog:     %s\n' \
         "$(watchdog_is_running && echo online || echo offline)"
     if [ -r "$WATCHDOG_HEARTBEAT_FILE" ]; then
@@ -980,9 +1032,18 @@ case "${1:-}" in
     vaultwarden-restart)
         restart_vaultwarden
         ;;
+    adguardhome-start)
+        start_adguardhome
+        ;;
+    adguardhome-stop)
+        stop_adguardhome
+        ;;
+    adguardhome-restart)
+        restart_adguardhome
+        ;;
     *)
         printf '%s\n' \
-            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|migration-restart|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop|vaultwarden-start|vaultwarden-stop|vaultwarden-restart}"
+            "Utilizare: $0 {start|boot|watchdog|watchdog-start|watchdog-stop|watchdog-restart|watchdog-sample|migration-restart|status|check|aria2-start|aria2-stop|transmission-start|transmission-stop|ai-start|ai-stop|https-start|https-stop|vaultwarden-start|vaultwarden-stop|vaultwarden-restart|adguardhome-start|adguardhome-stop|adguardhome-restart}"
         exit 1
         ;;
 esac

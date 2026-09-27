@@ -299,6 +299,7 @@ class SystemStatusRoutesTest(unittest.TestCase):
                 "aria2",
                 "transmission",
                 "ai",
+                "adguardhome",
                 "monitor",
                 "supervisor",
             },
