@@ -131,19 +131,31 @@ case "$current_version" in
             | sha256sum --check --status \
             || die "Checksumul arhivei AdGuard Home nu corespunde."
 
-        tar -xzf "$archive_path" -C "$temporary_dir" \
-            AdGuardHome/AdGuardHome \
-            AdGuardHome/AdGuardHome.sig \
-            AdGuardHome/LICENSE.txt
+        extracted_dir="$temporary_dir/extracted"
+        mkdir -p "$extracted_dir"
+        tar -xzf "$archive_path" -C "$extracted_dir"
+
+        if [ -x "$extracted_dir/AdGuardHome/AdGuardHome" ]; then
+            release_dir="$extracted_dir/AdGuardHome"
+        elif [ -x "$extracted_dir/AdGuardHome" ]; then
+            release_dir="$extracted_dir"
+        else
+            die "Arhiva verificată nu conține executabilul AdGuardHome."
+        fi
+
+        [ -f "$release_dir/AdGuardHome.sig" ] \
+            || die "Semnătura executabilului lipsește din arhivă."
+        [ -f "$release_dir/LICENSE.txt" ] \
+            || die "Licența AdGuard Home lipsește din arhivă."
         install -m 700 \
-            "$temporary_dir/AdGuardHome/AdGuardHome" \
+            "$release_dir/AdGuardHome" \
             "$APP_DIR/AdGuardHome.new"
         mv "$APP_DIR/AdGuardHome.new" "$APP_DIR/AdGuardHome"
         install -m 600 \
-            "$temporary_dir/AdGuardHome/AdGuardHome.sig" \
+            "$release_dir/AdGuardHome.sig" \
             "$APP_DIR/AdGuardHome.sig"
         install -m 600 \
-            "$temporary_dir/AdGuardHome/LICENSE.txt" \
+            "$release_dir/LICENSE.txt" \
             "$APP_DIR/LICENSE.txt"
         printf '%s\n' "$ADGUARD_VERSION" > "$BASE_DIR/version"
         chmod 600 "$BASE_DIR/version"

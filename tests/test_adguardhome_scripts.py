@@ -25,6 +25,20 @@ class AdGuardHomeScriptTests(unittest.TestCase):
         self.assertIn("sha256sum --check --status", self.installer)
         self.assertIn("--proto '=https'", self.installer)
 
+    def test_installer_accepts_both_official_archive_layouts(self):
+        self.assertIn(
+            '"$extracted_dir/AdGuardHome/AdGuardHome"',
+            self.installer,
+        )
+        self.assertIn(
+            '"$extracted_dir/AdGuardHome"',
+            self.installer,
+        )
+        self.assertIn(
+            '"$release_dir/AdGuardHome.sig"',
+            self.installer,
+        )
+
     def test_dns_process_is_unprivileged_and_only_firewall_uses_root(self):
         start_section = self.manager.split("start_service()", 1)[1].split(
             "stop_process()",
