@@ -523,9 +523,11 @@ the newest seven copies. Keep at least one encrypted copy off the server phone.
 
 The AdGuard Home integration uses the official stable ARM64 release and checks
 its SHA-256 digest before installation. The DNS process itself runs as the
-normal Termux user on port `5353`. Root is used only to install two narrowly
-scoped `iptables` rules (UDP and TCP) that redirect incoming DNS traffic on the
-Android Wi-Fi interface from port `53` to `5353`.
+normal Termux user on port `5353`. AdGuard Home requires administrator rights
+while its first-run wizard creates the configuration, so the manager uses root
+temporarily for that step. Afterwards root is kept only for two narrowly scoped
+`iptables` rules (UDP and TCP) that redirect incoming DNS traffic on the Android
+Wi-Fi interface from port `53` to `5353`.
 
 Install and start it on the rooted server phone:
 
@@ -547,6 +549,16 @@ In the setup wizard use these exact values:
 - Admin web interface: `All interfaces`, port `3000`
 - DNS server: `All interfaces`, port `5353`
 - Create a unique administrator username and a strong password
+
+After the wizard confirms the setup, return to Termux and drop the temporary
+root process permanently:
+
+```bash
+scripts/cloud-adguardhome.sh finalize
+```
+
+This returns the generated files to the Termux user and restarts AdGuard Home
+without root privileges.
 
 Do not select port `53` in the wizard. Port `53` belongs to the root firewall
 redirect; keeping AdGuard Home on `5353` avoids running the complete DNS service

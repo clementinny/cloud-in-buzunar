@@ -37,9 +37,9 @@ Opțiuni:
   --start                Pornește serviciul după instalare
   -h, --help             Afișează ajutorul
 
-Root este folosit numai pentru reguli iptables care redirecționează traficul
-LAN de la portul DNS 53 la portul intern 5353. Procesul AdGuard Home rulează
-cu utilizatorul Termux, fără privilegii root.
+Root este folosit pentru regulile iptables și temporar la prima configurare,
+conform cerinței AdGuard Home. După finalizare, procesul rulează cu utilizatorul
+Termux, fără privilegii root.
 EOF
 }
 

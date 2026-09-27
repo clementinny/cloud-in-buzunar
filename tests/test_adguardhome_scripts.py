@@ -39,14 +39,18 @@ class AdGuardHomeScriptTests(unittest.TestCase):
             self.installer,
         )
 
-    def test_dns_process_is_unprivileged_and_only_firewall_uses_root(self):
+    def test_dns_process_is_unprivileged_after_root_bootstrap(self):
         start_section = self.manager.split("start_service()", 1)[1].split(
             "stop_process()",
             1,
         )[0]
         self.assertIn('nohup "$BINARY"', start_section)
         self.assertNotIn("su -c", start_section)
-        self.assertEqual(self.manager.count('su -c "$root_script"'), 3)
+        self.assertIn("start_bootstrap()", self.manager)
+        self.assertIn("finalize_setup()", self.manager)
+        self.assertIn('su -c "$root_script"', self.manager)
+        self.assertIn('chown -R %q:%q %q', self.manager)
+        self.assertIn('finalize) finalize_setup', self.manager)
         self.assertIn("--dport 53", self.manager)
         self.assertIn("--to-ports $ADGUARD_DNS_PORT", self.manager)
         self.assertIn("for protocol in udp tcp", self.manager)
