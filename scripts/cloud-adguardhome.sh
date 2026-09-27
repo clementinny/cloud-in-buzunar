@@ -13,6 +13,7 @@ BINARY="$APP_DIR/AdGuardHome"
 PID_FILE="$DATA_DIR/runtime/adguardhome.pid"
 BOOTSTRAP_PID_FILE="$DATA_DIR/runtime/adguardhome-bootstrap.pid"
 LOG_FILE="$DATA_DIR/logs/adguardhome.log"
+CA_CERT_FILE="${SSL_CERT_FILE:-${PREFIX:-/data/data/com.termux/files/usr}/etc/tls/cert.pem}"
 
 ADGUARD_BIND_HOST="0.0.0.0"
 ADGUARD_ADMIN_PORT=3000
@@ -126,7 +127,8 @@ start_bootstrap() {
     local root_script
     nohup_binary="$(command -v nohup)"
     printf -v root_script \
-        '%q %q --config %q --work-dir %q --web-addr %q >> %q 2>&1 & echo $!' \
+        'SSL_CERT_FILE=%q %q %q --config %q --work-dir %q --web-addr %q >> %q 2>&1 & echo $!' \
+        "$CA_CERT_FILE" \
         "$nohup_binary" \
         "$BINARY" \
         "$CONFIG_FILE" \
@@ -218,6 +220,8 @@ start_service() {
     load_config
     [ -x "$BINARY" ] \
         || die "Executabilul AdGuard Home lipsește. Rulează din nou instalatorul."
+    [ -r "$CA_CERT_FILE" ] \
+        || die "Fișierul CA Termux lipsește: $CA_CERT_FILE"
 
     mkdir -p "$WORK_DIR" "$CONFIG_DIR" "$DATA_DIR/runtime" "$DATA_DIR/logs"
     chmod 700 "$BASE_DIR" "$WORK_DIR" "$CONFIG_DIR" "$DATA_DIR/runtime"
@@ -248,7 +252,7 @@ start_service() {
     ensure_dns_redirect
     rm -f "$PID_FILE"
 
-    nohup "$BINARY" \
+    SSL_CERT_FILE="$CA_CERT_FILE" nohup "$BINARY" \
         --config "$CONFIG_FILE" \
         --work-dir "$WORK_DIR" \
         --web-addr "$ADGUARD_BIND_HOST:$ADGUARD_ADMIN_PORT" \
